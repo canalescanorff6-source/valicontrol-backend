@@ -2,13 +2,12 @@ from fastapi import FastAPI, Header
 from pydantic import BaseModel
 from database import conectar, init_db
 from auth import login_user, register_user
+from pagamentos import criar_pagamento
+import os
 
 app = FastAPI()
 
 
-# =========================
-# MODELS
-# =========================
 class UserAuth(BaseModel):
     email: str
     senha: str
@@ -22,34 +21,10 @@ class Produto(BaseModel):
     quantidade: int
 
 
-# =========================
-# START
-# =========================
-@app.on_event("startup")
-def startup():
-    init_db()
-    print("🚀 API ONLINE")
+class EmailRequest(BaseModel):
+    email: str
 
 
-# =========================
-# LOGIN
-# =========================
-@app.post("/login")
-def login(data: UserAuth):
-    return login_user(data.email, data.senha, data.device_id)
-
-
-# =========================
-# REGISTER
-# =========================
-@app.post("/register")
-def register(data: UserAuth):
-    return register_user(data.email, data.senha, data.device_id)
-
-
-# =========================
-# TOKEN
-# =========================
 def get_email_by_token(token):
     if not token:
         return None
@@ -63,6 +38,33 @@ def get_email_by_token(token):
     conn.close()
 
     return user[0] if user else None
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
+    print("🚀 API ONLINE")
+
+
+# =========================
+# LOGIN / REGISTER
+# =========================
+@app.post("/login")
+def login(data: UserAuth):
+    return login_user(data.email, data.senha, data.device_id)
+
+
+@app.post("/register")
+def register(data: UserAuth):
+    return register_user(data.email, data.senha, data.device_id)
+
+
+# =========================
+# PAGAMENTO PIX
+# =========================
+@app.post("/pagar")
+def pagar(data: EmailRequest):
+    return criar_pagamento(data.email)
 
 
 # =========================
@@ -111,9 +113,26 @@ def adicionar(data: Produto, token: str = Header(None)):
     return {"ok": True}
 
 
-# =========================
-# TESTE
-# =========================
+@app.delete("/produtos/{id}")
+def excluir(id: int, token: str = Header(None)):
+    email = get_email_by_token(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
+    conn = conectar()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        DELETE FROM produtos WHERE id=%s AND user_email=%s
+    """, (id, email))
+
+    conn.commit()
+    conn.close()
+
+    return {"ok": True}
+
+
 @app.get("/")
 def home():
     return {"status": "API ONLINE"}
