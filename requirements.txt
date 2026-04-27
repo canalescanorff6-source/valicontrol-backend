@@ -1,7 +1,5 @@
 fastapi
 uvicorn[standard]
-requests
 pydantic
-mercadopago
 psycopg2-binary
 python-dotenv
