@@ -67,7 +67,7 @@ def login_user(email, senha, device_id):
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # trava dispositivo
+        # 🔒 trava dispositivo
         if device_db and device_db != device_id:
             return {"erro": "Conta usada em outro dispositivo"}
 
@@ -84,7 +84,7 @@ def login_user(email, senha, device_id):
         if trial_expira:
             trial_restante = (trial_expira - agora).days
 
-        # bloqueado
+        # ⛔ bloqueado
         if trial_restante <= 0 and ativo == 0:
             return {
                 "status": "bloqueado",
@@ -113,3 +113,24 @@ def login_user(email, senha, device_id):
 
     finally:
         conn.close()
+
+
+# =========================
+# 💳 ATIVAR USUÁRIO (PIX)
+# =========================
+def ativar_usuario(email):
+    conn = conectar()
+    cursor = conn.cursor()
+
+    # ativa e adiciona +30 dias
+    cursor.execute("""
+        UPDATE users
+        SET ativo = 1,
+            trial_expira_em = NOW() + INTERVAL '30 days'
+        WHERE email = %s
+    """, (email,))
+
+    conn.commit()
+    conn.close()
+
+    return True
