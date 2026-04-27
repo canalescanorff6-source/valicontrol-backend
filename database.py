@@ -21,11 +21,8 @@ def init_db():
         )
     """)
 
-    # 👇 CORREÇÃO AUTOMÁTICA
-    cursor.execute("""
-        ALTER TABLE users
-        ADD COLUMN IF NOT EXISTS device_id TEXT
-    """)
+    # adiciona colunas faltantes automaticamente
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS device_id TEXT")
 
     # PRODUTOS
     cursor.execute("""
@@ -41,5 +38,4 @@ def init_db():
 
     conn.commit()
     conn.close()
-
     print("✅ DB OK")
