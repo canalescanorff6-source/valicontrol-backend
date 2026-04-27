@@ -1,15 +1,14 @@
 import psycopg2
 import os
 
-
 def conectar():
     return psycopg2.connect(os.getenv("DATABASE_URL"))
-
 
 def init_db():
     conn = conectar()
     cursor = conn.cursor()
 
+    # USERS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -18,11 +17,17 @@ def init_db():
             token TEXT,
             criado_em TIMESTAMP,
             trial_expira_em TIMESTAMP,
-            ativo INTEGER DEFAULT 0,
-            device_id TEXT
+            ativo INTEGER DEFAULT 0
         )
     """)
 
+    # 👇 CORREÇÃO AUTOMÁTICA
+    cursor.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS device_id TEXT
+    """)
+
+    # PRODUTOS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS produtos (
             id SERIAL PRIMARY KEY,
