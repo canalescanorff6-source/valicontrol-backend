@@ -51,57 +51,53 @@ def login_user(email, senha, device_id):
     conn = conectar()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT senha, trial_expira_em, ativo, device_id
-        FROM users WHERE email=%s
-    """, (email,))
+    try:
+        cursor.execute("""
+            SELECT senha, trial_expira_em, ativo, device_id
+            FROM users WHERE email=%s
+        """, (email,))
 
-    user = cursor.fetchone()
+        user = cursor.fetchone()
 
-    if not user:
-        conn.close()
-        return {"erro": "Usuário não existe"}
+        if not user:
+            return {"erro": "Usuário não existe"}
 
-    senha_db, trial_expira, ativo, device_db = user
+        senha_db, trial_expira, ativo, device_db = user
 
-    if hash_senha(senha) != senha_db:
-        conn.close()
-        return {"erro": "Senha inválida"}
+        if hash_senha(senha) != senha_db:
+            return {"erro": "Senha inválida"}
 
-    # 🔒 trava por máquina
-    if device_db and device_db != device_id:
-        conn.close()
-        return {"erro": "Conta usada em outro dispositivo"}
+        # 🔒 trava por máquina
+        if device_db and device_db != device_id:
+            return {"erro": "Conta usada em outro dispositivo"}
 
-    # salva device na primeira vez
-    if not device_db:
+        # salva device na primeira vez
+        if not device_db:
+            cursor.execute(
+                "UPDATE users SET device_id=%s WHERE email=%s",
+                (device_id, email)
+            )
+
+        agora = datetime.now()
+
+        # ⛔ expirado
+        if agora > trial_expira and ativo == 0:
+            return {"status": "bloqueado"}
+
+        token = gerar_token()
+
         cursor.execute(
-            "UPDATE users SET device_id=%s WHERE email=%s",
-            (device_id, email)
+            "UPDATE users SET token=%s WHERE email=%s",
+            (token, email)
         )
 
-    agora = datetime.now()
+        conn.commit()
 
-    # ⛔ expirado
-    if agora > trial_expira and ativo == 0:
-        conn.close()
-        return {"status": "bloqueado"}
-
-    token = gerar_token()
-
-    cursor.execute(
-        "UPDATE users SET token=%s WHERE email=%s",
-        (token, email)
-    )
-
-    conn.commit()
-    conn.close()
-
-    return {
-        "status": "ok",
-        "token": token,
-        "trial_restante": (trial_expira - agora).days
-    }
+        return {
+            "status": "ok",
+            "token": token,
+            "trial_restante": (trial_expira - agora).days
+        }
 
     except Exception as e:
         print("ERRO LOGIN:", e)
