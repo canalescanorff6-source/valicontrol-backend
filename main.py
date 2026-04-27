@@ -2,24 +2,12 @@ from fastapi import FastAPI, Header
 from pydantic import BaseModel
 from database import conectar, init_db
 from auth import login_user, register_user
-import mercadopago
-import os
 
 app = FastAPI()
 
-# =========================
-# 🔑 MERCADO PAGO
-# =========================
-MP_TOKEN = os.getenv("MP_TOKEN")
-
-if not MP_TOKEN:
-    raise Exception("MP_TOKEN não configurado")
-
-sdk = mercadopago.SDK(MP_TOKEN)
-
 
 # =========================
-# 📦 MODELS
+# MODELS
 # =========================
 class UserAuth(BaseModel):
     email: str
@@ -35,7 +23,32 @@ class Produto(BaseModel):
 
 
 # =========================
-# 🔐 TOKEN
+# START
+# =========================
+@app.on_event("startup")
+def startup():
+    init_db()
+    print("🚀 API ONLINE")
+
+
+# =========================
+# LOGIN
+# =========================
+@app.post("/login")
+def login(data: UserAuth):
+    return login_user(data.email, data.senha, data.device_id)
+
+
+# =========================
+# REGISTER
+# =========================
+@app.post("/register")
+def register(data: UserAuth):
+    return register_user(data.email, data.senha, data.device_id)
+
+
+# =========================
+# TOKEN
 # =========================
 def get_email_by_token(token):
     if not token:
@@ -53,40 +66,7 @@ def get_email_by_token(token):
 
 
 # =========================
-# 🚀 START
-# =========================
-@app.on_event("startup")
-def startup():
-    init_db()
-    print("🚀 API ONLINE")
-
-
-# =========================
-# 🔐 LOGIN
-# =========================
-@app.post("/login")
-def login(data: UserAuth):
-    try:
-        return login_user(data.email, data.senha, data.device_id)
-    except Exception as e:
-        print("ERRO LOGIN:", e)
-        return {"erro": "falha no login"}
-
-
-# =========================
-# 👤 REGISTER
-# =========================
-@app.post("/register")
-def register(data: UserAuth):
-    try:
-        return register_user(data.email, data.senha, data.device_id)
-    except Exception as e:
-        print("ERRO REGISTER:", e)
-        return {"erro": "falha no cadastro"}
-
-
-# =========================
-# 📦 PRODUTOS
+# PRODUTOS
 # =========================
 @app.get("/produtos")
 def listar(token: str = Header(None)):
@@ -131,50 +111,8 @@ def adicionar(data: Produto, token: str = Header(None)):
     return {"ok": True}
 
 
-@app.delete("/produtos/{id}")
-def excluir(id: int, token: str = Header(None)):
-    email = get_email_by_token(token)
-
-    if not email:
-        return {"erro": "não autorizado"}
-
-    conn = conectar()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        DELETE FROM produtos WHERE id=%s AND user_email=%s
-    """, (id, email))
-
-    conn.commit()
-    conn.close()
-
-    return {"ok": True}
-
-
-@app.put("/produtos/{id}")
-def atualizar(id: int, data: Produto, token: str = Header(None)):
-    email = get_email_by_token(token)
-
-    if not email:
-        return {"erro": "não autorizado"}
-
-    conn = conectar()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE produtos
-        SET codigo=%s, nome=%s, validade=%s, quantidade=%s
-        WHERE id=%s AND user_email=%s
-    """, (data.codigo, data.nome, data.validade, data.quantidade, id, email))
-
-    conn.commit()
-    conn.close()
-
-    return {"ok": True}
-
-
 # =========================
-# 🧪 TESTE
+# TESTE
 # =========================
 @app.get("/")
 def home():
