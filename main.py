@@ -1,18 +1,47 @@
 from fastapi import FastAPI, Header, Request
 from pydantic import BaseModel
-from database import conectar
-from auth import ativar_usuario
-from datetime import datetime
+from database import conectar, init_db
+from auth import login_user, register_user, ativar_usuario
+import mercadopago
+import os
 
 app = FastAPI()
 
-ADMIN_TOKEN = "ADMIN_MASTER_KEY"
+# =========================
+# 🔑 MERCADO PAGO
+# =========================
+MP_TOKEN = os.getenv("MP_TOKEN")
+
+if not MP_TOKEN:
+    raise Exception("MP_TOKEN não configurado")
+
+sdk = mercadopago.SDK(MP_TOKEN)
 
 
 # =========================
-# 🔐 VALIDA TOKEN
+# 📦 MODELS
 # =========================
-def get_email_by_token(token: str):
+class UserAuth(BaseModel):
+    email: str
+    senha: str
+    device_id: str
+
+
+class Produto(BaseModel):
+    codigo: str
+    nome: str
+    validade: str
+    quantidade: int
+
+
+class EmailRequest(BaseModel):
+    email: str
+
+
+# =========================
+# 🔐 TOKEN
+# =========================
+def get_email_by_token(token):
     if not token:
         return None
 
@@ -28,28 +57,48 @@ def get_email_by_token(token: str):
 
 
 # =========================
-# 📦 MODELS
+# 🚀 START
 # =========================
-class Produto(BaseModel):
-    codigo: str
-    nome: str
-    validade: str
-    quantidade: int
+@app.on_event("startup")
+def startup():
+    init_db()
+    print("🚀 API ONLINE")
 
 
-class EmailRequest(BaseModel):
-    email: str
+# =========================
+# 🔐 LOGIN
+# =========================
+@app.post("/login")
+def login(data: UserAuth):
+    try:
+        res = login_user(data.email, data.senha, data.device_id)
+        return res
+    except Exception as e:
+        print("ERRO LOGIN:", e)
+        return {"erro": "falha no login"}
+
+
+# =========================
+# 👤 REGISTER
+# =========================
+@app.post("/register")
+def register(data: UserAuth):
+    try:
+        return register_user(data.email, data.senha, data.device_id)
+    except Exception as e:
+        print("ERRO REGISTER:", e)
+        return {"erro": "falha no cadastro"}
 
 
 # =========================
 # 📦 PRODUTOS
 # =========================
 @app.get("/produtos")
-def listar_produtos(token: str = Header(None)):
+def listar(token: str = Header(None)):
     email = get_email_by_token(token)
 
     if not email:
-        return {"erro": "Token inválido"}
+        return {"erro": "token inválido"}
 
     conn = conectar()
     cursor = conn.cursor()
@@ -58,7 +107,6 @@ def listar_produtos(token: str = Header(None)):
         SELECT id, codigo, nome, validade, quantidade
         FROM produtos
         WHERE user_email=%s
-        ORDER BY id DESC
     """, (email,))
 
     dados = cursor.fetchall()
@@ -68,7 +116,7 @@ def listar_produtos(token: str = Header(None)):
 
 
 @app.post("/produtos")
-def adicionar_produto(data: Produto, token: str = Header(None)):
+def adicionar(data: Produto, token: str = Header(None)):
     email = get_email_by_token(token)
 
     if not email:
@@ -89,7 +137,7 @@ def adicionar_produto(data: Produto, token: str = Header(None)):
 
 
 @app.delete("/produtos/{id}")
-def excluir_produto(id: int, token: str = Header(None)):
+def excluir(id: int, token: str = Header(None)):
     email = get_email_by_token(token)
 
     if not email:
@@ -99,8 +147,7 @@ def excluir_produto(id: int, token: str = Header(None)):
     cursor = conn.cursor()
 
     cursor.execute("""
-        DELETE FROM produtos
-        WHERE id=%s AND user_email=%s
+        DELETE FROM produtos WHERE id=%s AND user_email=%s
     """, (id, email))
 
     conn.commit()
@@ -110,7 +157,7 @@ def excluir_produto(id: int, token: str = Header(None)):
 
 
 @app.put("/produtos/{id}")
-def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
+def atualizar(id: int, data: Produto, token: str = Header(None)):
     email = get_email_by_token(token)
 
     if not email:
@@ -132,81 +179,8 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
 
 
 # =========================
-# 👑 ADMIN
-# =========================
-@app.get("/admin/users")
-def admin_users(token: str = Header(None)):
-    if token != ADMIN_TOKEN:
-        return {"erro": "acesso negado"}
-
-    conn = conectar()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT email, criado_em, trial_expira_em, ativo
-        FROM users
-        ORDER BY criado_em DESC
-    """)
-
-    dados = cursor.fetchall()
-    conn.close()
-
-    res = []
-
-    for u in dados:
-        email, criado, trial, ativo = u
-
-        agora = datetime.now()
-        dias = (trial - agora).days if trial else 0
-
-        if agora <= trial:
-            status = "trial"
-        elif ativo == 1:
-            status = "ativo"
-        else:
-            status = "bloqueado"
-
-        res.append({
-            "email": email,
-            "status": status,
-            "dias_restantes": max(0, dias)
-        })
-
-    return res
-
-
-@app.post("/admin/ativar")
-def admin_ativar(data: EmailRequest, token: str = Header(None)):
-    if token != ADMIN_TOKEN:
-        return {"erro": "acesso negado"}
-
-    ativar_usuario(data.email)
-    return {"ok": True}
-
-
-@app.post("/admin/bloquear")
-def admin_bloquear(data: EmailRequest, token: str = Header(None)):
-    if token != ADMIN_TOKEN:
-        return {"erro": "acesso negado"}
-
-    conn = conectar()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE users
-        SET ativo=0, trial_expira_em=NOW()
-        WHERE email=%s
-    """, (data.email,))
-
-    conn.commit()
-    conn.close()
-
-    return {"ok": True}
-
-
-# =========================
 # 🧪 TESTE
 # =========================
 @app.get("/")
 def home():
-    return {"status": "API ONLINE 🚀"}
+    return {"status": "API ONLINE"}
