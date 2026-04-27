@@ -13,7 +13,7 @@ def gerar_token():
 
 
 # =========================
-# 🧾 REGISTER
+# REGISTER
 # =========================
 def register_user(email, senha, device_id):
     conn = conectar()
@@ -45,13 +45,14 @@ def register_user(email, senha, device_id):
 
 
 # =========================
-# 🔐 LOGIN
+# LOGIN (100% ESTÁVEL)
 # =========================
 def login_user(email, senha, device_id):
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("""
             SELECT senha, trial_expira_em, ativo, device_id
             FROM users WHERE email=%s
@@ -64,14 +65,15 @@ def login_user(email, senha, device_id):
 
         senha_db, trial_expira, ativo, device_db = user
 
+        # senha
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # 🔒 trava por máquina
+        # device lock
         if device_db and device_db != device_id:
             return {"erro": "Conta usada em outro dispositivo"}
 
-        # salva device na primeira vez
+        # salvar device na primeira vez
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -80,7 +82,11 @@ def login_user(email, senha, device_id):
 
         agora = datetime.now()
 
-        # ⛔ expirado
+        # evita erro None
+        if not trial_expira:
+            trial_expira = agora
+
+        # bloqueio
         if agora > trial_expira and ativo == 0:
             return {"status": "bloqueado"}
 
@@ -96,12 +102,13 @@ def login_user(email, senha, device_id):
         return {
             "status": "ok",
             "token": token,
-            "trial_restante": (trial_expira - agora).days
+            "trial_restante": max(0, (trial_expira - agora).days)
         }
 
     except Exception as e:
-        print("ERRO LOGIN:", e)
-        return {"erro": "falha no login"}
+        print("ERRO LOGIN REAL:", e)
+        return {"erro": str(e)}
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
