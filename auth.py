@@ -13,7 +13,7 @@ def gerar_token():
 
 
 # =========================
-# REGISTER
+# 🧾 REGISTER
 # =========================
 def register_user(email, senha, device_id):
     conn = conectar()
@@ -45,14 +45,13 @@ def register_user(email, senha, device_id):
 
 
 # =========================
-# LOGIN (100% ESTÁVEL)
+# 🔐 LOGIN
 # =========================
 def login_user(email, senha, device_id):
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
+    try:
         cursor.execute("""
             SELECT senha, trial_expira_em, ativo, device_id
             FROM users WHERE email=%s
@@ -65,15 +64,14 @@ def login_user(email, senha, device_id):
 
         senha_db, trial_expira, ativo, device_db = user
 
-        # senha
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # device lock
+        # trava dispositivo
         if device_db and device_db != device_id:
             return {"erro": "Conta usada em outro dispositivo"}
 
-        # salvar device na primeira vez
+        # salva device primeira vez
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -82,13 +80,16 @@ def login_user(email, senha, device_id):
 
         agora = datetime.now()
 
-        # evita erro None
-        if not trial_expira:
-            trial_expira = agora
+        trial_restante = 0
+        if trial_expira:
+            trial_restante = (trial_expira - agora).days
 
-        # bloqueio
-        if agora > trial_expira and ativo == 0:
-            return {"status": "bloqueado"}
+        # bloqueado
+        if trial_restante <= 0 and ativo == 0:
+            return {
+                "status": "bloqueado",
+                "trial_restante": 0
+            }
 
         token = gerar_token()
 
@@ -102,13 +103,13 @@ def login_user(email, senha, device_id):
         return {
             "status": "ok",
             "token": token,
-            "trial_restante": max(0, (trial_expira - agora).days)
+            "trial_restante": trial_restante,
+            "ativo": ativo
         }
 
     except Exception as e:
-        print("ERRO LOGIN REAL:", e)
-        return {"erro": str(e)}
+        print("ERRO LOGIN:", e)
+        return {"erro": "falha no login"}
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
