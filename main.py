@@ -1,21 +1,10 @@
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header
 from pydantic import BaseModel
 from database import conectar, init_db
-from auth import login_user, register_user, ativar_usuario
-import mercadopago
+from auth import login_user, register_user
 import os
 
 app = FastAPI()
-
-# =========================
-# 🔑 MERCADO PAGO
-# =========================
-MP_TOKEN = os.getenv("MP_TOKEN")
-
-if not MP_TOKEN:
-    raise Exception("MP_TOKEN não configurado")
-
-sdk = mercadopago.SDK(MP_TOKEN)
 
 
 # =========================
@@ -32,10 +21,6 @@ class Produto(BaseModel):
     nome: str
     validade: str
     quantidade: int
-
-
-class EmailRequest(BaseModel):
-    email: str
 
 
 # =========================
@@ -70,12 +55,7 @@ def startup():
 # =========================
 @app.post("/login")
 def login(data: UserAuth):
-    try:
-        res = login_user(data.email, data.senha, data.device_id)
-        return res
-    except Exception as e:
-        print("ERRO LOGIN:", e)
-        return {"erro": "falha no login"}
+    return login_user(data.email, data.senha, data.device_id)
 
 
 # =========================
@@ -83,11 +63,7 @@ def login(data: UserAuth):
 # =========================
 @app.post("/register")
 def register(data: UserAuth):
-    try:
-        return register_user(data.email, data.senha, data.device_id)
-    except Exception as e:
-        print("ERRO REGISTER:", e)
-        return {"erro": "falha no cadastro"}
+    return register_user(data.email, data.senha, data.device_id)
 
 
 # =========================
