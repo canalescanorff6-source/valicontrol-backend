@@ -1,29 +1,37 @@
-from fastapi import Request
-from auth import ativar_usuario  # 🔥 IMPORTANTE
-import mercadopago
 import os
+
+sdk = None
 
 try:
     import mercadopago
 
     MP_TOKEN = os.getenv("MP_TOKEN")
-    sdk = mercadopago.SDK(MP_TOKEN) if MP_TOKEN else None
+
+    if MP_TOKEN:
+        sdk = mercadopago.SDK(MP_TOKEN)
+        print("✅ MercadoPago carregado")
+    else:
+        print("⚠️ MP_TOKEN não definido")
 
 except Exception as e:
-    print("⚠️ MercadoPago erro:", e)
+    print("⚠️ Erro ao importar MercadoPago:", e)
     sdk = None
 
 
 def criar_pagamento(email):
     if not sdk:
-        return {"erro": "Pagamento indisponível"}
+        return {
+            "erro": "Pagamento indisponível (MercadoPago não instalado)"
+        }
 
     try:
         payment = sdk.payment().create({
             "transaction_amount": 10,
             "description": "Plano ValiControl",
             "payment_method_id": "pix",
-            "payer": {"email": email}
+            "payer": {
+                "email": email
+            }
         })
 
         response = payment.get("response", {})
@@ -38,5 +46,5 @@ def criar_pagamento(email):
         }
 
     except Exception as e:
-        print("ERRO PIX:", e)
-        return {"erro": "falha pagamento"}
+        print("💥 ERRO PIX:", e)
+        return {"erro": "falha ao gerar pagamento"}
