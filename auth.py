@@ -57,9 +57,15 @@ def register_user(email, senha, device_id):
         conn = conectar()
         cursor = conn.cursor()
 
+        # 🔥 BLOQUEIO POR EMAIL
         cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
         if cursor.fetchone():
             return {"erro": "Email já existe"}
+
+        # 🔥 BLOQUEIO POR DISPOSITIVO
+        cursor.execute("SELECT id FROM users WHERE device_id=%s", (device_id,))
+        if cursor.fetchone():
+            return {"erro": "Já existe uma conta neste dispositivo"}
 
         agora = datetime.now()
         trial = agora + timedelta(days=15)
