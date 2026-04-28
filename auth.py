@@ -12,9 +12,6 @@ def gerar_token():
     return str(uuid.uuid4())
 
 
-# =========================
-# 🧾 REGISTER
-# =========================
 def register_user(email, senha, device_id):
     conn = conectar()
     cursor = conn.cursor()
@@ -30,13 +27,7 @@ def register_user(email, senha, device_id):
     cursor.execute("""
         INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id)
         VALUES (%s, %s, %s, %s, 0, %s)
-    """, (
-        email,
-        hash_senha(senha),
-        agora,
-        trial,
-        device_id
-    ))
+    """, (email, hash_senha(senha), agora, trial, device_id))
 
     conn.commit()
     conn.close()
@@ -44,9 +35,6 @@ def register_user(email, senha, device_id):
     return {"status": "ok"}
 
 
-# =========================
-# 🔐 LOGIN
-# =========================
 def login_user(email, senha, device_id):
     conn = conectar()
     cursor = conn.cursor()
@@ -67,11 +55,9 @@ def login_user(email, senha, device_id):
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # 🔒 trava dispositivo
         if device_db and device_db != device_id:
             return {"erro": "Conta usada em outro dispositivo"}
 
-        # salva device primeira vez
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -79,17 +65,10 @@ def login_user(email, senha, device_id):
             )
 
         agora = datetime.now()
+        dias = (trial_expira - agora).days if trial_expira else 0
 
-        trial_restante = 0
-        if trial_expira:
-            trial_restante = (trial_expira - agora).days
-
-        # ⛔ bloqueado
-        if trial_restante <= 0 and ativo == 0:
-            return {
-                "status": "bloqueado",
-                "trial_restante": 0
-            }
+        if dias <= 0 and ativo == 0:
+            return {"status": "bloqueado", "trial_restante": 0}
 
         token = gerar_token()
 
@@ -103,7 +82,7 @@ def login_user(email, senha, device_id):
         return {
             "status": "ok",
             "token": token,
-            "trial_restante": trial_restante,
+            "trial_restante": dias,
             "ativo": ativo
         }
 
@@ -115,14 +94,11 @@ def login_user(email, senha, device_id):
         conn.close()
 
 
-# =========================
-# 💳 ATIVAR USUÁRIO (PIX)
-# =========================
+# 🔥 IMPORTANTE (resolve seu erro)
 def ativar_usuario(email):
     conn = conectar()
     cursor = conn.cursor()
 
-    # ativa e adiciona +30 dias
     cursor.execute("""
         UPDATE users
         SET ativo = 1,
