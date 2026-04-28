@@ -2,9 +2,8 @@ from fastapi import FastAPI, Header, Request
 from pydantic import BaseModel
 from datetime import datetime
 from database import conectar, init_db
-from auth import login_user, register_user, ativar_usuario
+from auth import login_user, register_user, ativar_usuario, calcular_dias_restantes
 from pagamentos import criar_pagamento, sdk
-from auth import calcular_dias_restantes  # 🔥 IMPORTANTE
 
 app = FastAPI()
 
@@ -44,11 +43,12 @@ def get_email(token):
     conn = conectar()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT email FROM users WHERE token=%s", (token,))
-    user = cursor.fetchone()
-
-    conn.close()
-    return user[0] if user else None
+    try:
+        cursor.execute("SELECT email FROM users WHERE token=%s", (token,))
+        user = cursor.fetchone()
+        return user[0] if user else None
+    finally:
+        conn.close()
 
 
 # =========================
@@ -73,11 +73,14 @@ def pagamento(data: UserAuth):
 
 
 # =========================
-# 🔔 WEBHOOK
+# 🔔 WEBHOOK (CORRIGIDO)
 # =========================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
+
+    if not sdk:
+        return {"ok": False}
 
     try:
         if data.get("type") == "payment":
@@ -116,16 +119,9 @@ def listar(token: str = Header(None)):
             SELECT id, codigo, nome, validade, quantidade, tipo_qtd
             FROM produtos WHERE user_email=%s
         """, (email,))
-    except:
-        cursor.execute("""
-            SELECT id, codigo, nome, validade, quantidade, '' as tipo_qtd
-            FROM produtos WHERE user_email=%s
-        """, (email,))
-
-    dados = cursor.fetchall()
-    conn.close()
-
-    return dados
+        return cursor.fetchall()
+    finally:
+        conn.close()
 
 
 # =========================
@@ -133,21 +129,20 @@ def listar(token: str = Header(None)):
 # =========================
 @app.post("/produtos")
 def adicionar(data: Produto, token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
     try:
-        email = get_email(token)
+        datetime.strptime(data.validade, "%Y-%m-%d")
+    except:
+        return {"erro": "data inválida"}
 
-        if not email:
-            return {"erro": "não autorizado"}
+    conn = conectar()
+    cursor = conn.cursor()
 
-        # valida data
-        try:
-            datetime.strptime(data.validade, "%Y-%m-%d")
-        except:
-            return {"erro": "data inválida, use yyyy-MM-dd"}
-
-        conn = conectar()
-        cursor = conn.cursor()
-
+    try:
         cursor.execute("""
             INSERT INTO produtos 
             (codigo, nome, validade, quantidade, tipo_qtd, user_email)
@@ -162,17 +157,18 @@ def adicionar(data: Produto, token: str = Header(None)):
         ))
 
         conn.commit()
-        conn.close()
-
         return {"ok": True}
 
     except Exception as e:
         print("ERRO INSERT:", e)
         return {"erro": "erro ao salvar produto"}
 
+    finally:
+        conn.close()
+
 
 # =========================
-# ❌ EXCLUIR
+# ❌ EXCLUIR (MELHORADO)
 # =========================
 @app.delete("/produtos/{id}")
 def excluir(id: int, token: str = Header(None)):
@@ -184,18 +180,23 @@ def excluir(id: int, token: str = Header(None)):
     conn = conectar()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        DELETE FROM produtos WHERE id=%s AND user_email=%s
-    """, (id, email))
+    try:
+        cursor.execute("""
+            DELETE FROM produtos WHERE id=%s AND user_email=%s
+        """, (id, email))
 
-    conn.commit()
-    conn.close()
+        if cursor.rowcount == 0:
+            return {"erro": "produto não encontrado"}
 
-    return {"ok": True}
+        conn.commit()
+        return {"ok": True}
+
+    finally:
+        conn.close()
 
 
 # =========================
-# ✏️ ATUALIZAR PRODUTO (FALTAVA ISSO)
+# ✏️ ATUALIZAR (CORRIGIDO)
 # =========================
 @app.put("/produtos/{id}")
 def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
@@ -204,11 +205,10 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
     if not email:
         return {"erro": "não autorizado"}
 
-    # valida data
     try:
         datetime.strptime(data.validade, "%Y-%m-%d")
     except:
-        return {"erro": "data inválida, use yyyy-MM-dd"}
+        return {"erro": "data inválida"}
 
     conn = conectar()
     cursor = conn.cursor()
@@ -232,22 +232,22 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
             email
         ))
 
-        # 🔥 IMPORTANTE: verifica se realmente atualizou
         if cursor.rowcount == 0:
             return {"erro": "produto não encontrado"}
 
         conn.commit()
-        conn.close()
-
         return {"ok": True}
 
     except Exception as e:
         print("ERRO UPDATE:", e)
         return {"erro": "erro ao atualizar produto"}
 
+    finally:
+        conn.close()
+
 
 # =========================
-# 📊 STATS (CORRIGIDO)
+# 📊 STATS
 # =========================
 @app.get("/stats")
 def stats(token: str = Header(None)):
@@ -259,44 +259,35 @@ def stats(token: str = Header(None)):
     conn = conectar()
     cursor = conn.cursor()
 
-    # =========================
-    # 📦 TOTAL PRODUTOS
-    # =========================
-    cursor.execute("""
-        SELECT COUNT(*) FROM produtos WHERE user_email=%s
-    """, (email,))
-    total = cursor.fetchone()[0] or 0
+    try:
+        cursor.execute("""
+            SELECT COUNT(*) FROM produtos WHERE user_email=%s
+        """, (email,))
+        total = cursor.fetchone()[0] or 0
 
-    # =========================
-    # 👤 DADOS DO USUÁRIO
-    # =========================
-    cursor.execute("""
-        SELECT trial_expira_em, ativo FROM users WHERE email=%s
-    """, (email,))
-    user = cursor.fetchone()
+        cursor.execute("""
+            SELECT trial_expira_em, ativo FROM users WHERE email=%s
+        """, (email,))
+        user = cursor.fetchone()
 
-    trial_restante = 0
-    ativo = 0
+        trial_restante = 0
+        ativo = 0
 
-    if user:
-        trial_expira_em, ativo = user
+        if user:
+            trial_expira_em, ativo = user
+            trial_restante = calcular_dias_restantes(trial_expira_em)
 
-        # 🔥 CORREÇÃO REAL AQUI
-        trial_restante = calcular_dias_restantes(trial_expira_em)
+        limite = 100 if ativo else 50
 
-    conn.close()
+        return {
+            "total": total,
+            "trial_restante": trial_restante,
+            "limite": limite,
+            "plano": "PRO" if ativo else "TRIAL"
+        }
 
-    # =========================
-    # 🎯 LIMITE DINÂMICO
-    # =========================
-    limite = 100 if ativo else 50
-
-    return {
-        "total": total,
-        "trial_restante": trial_restante,
-        "limite": limite,
-        "plano": "PRO" if ativo else "TRIAL"
-    }
+    finally:
+        conn.close()
 
 
 @app.get("/")
