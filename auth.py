@@ -3,15 +3,23 @@ import uuid
 from datetime import datetime, timedelta
 from database import conectar
 
-
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
-
 
 def gerar_token():
     return str(uuid.uuid4())
 
+def log(email, acao):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO logs (email, acao) VALUES (%s, %s)",
+        (email, acao)
+    )
+    conn.commit()
+    conn.close()
 
+# REGISTER
 def register_user(email, senha, device_id):
     conn = conectar()
     cursor = conn.cursor()
@@ -34,7 +42,7 @@ def register_user(email, senha, device_id):
 
     return {"status": "ok"}
 
-
+# LOGIN
 def login_user(email, senha, device_id):
     conn = conectar()
     cursor = conn.cursor()
@@ -56,7 +64,7 @@ def login_user(email, senha, device_id):
             return {"erro": "Senha inválida"}
 
         if device_db and device_db != device_id:
-            return {"erro": "Conta usada em outro dispositivo"}
+            return {"erro": "Conta já usada em outro dispositivo"}
 
         if not device_db:
             cursor.execute(
@@ -79,6 +87,8 @@ def login_user(email, senha, device_id):
 
         conn.commit()
 
+        log(email, "login")
+
         return {
             "status": "ok",
             "token": token,
@@ -93,8 +103,7 @@ def login_user(email, senha, device_id):
     finally:
         conn.close()
 
-
-# 🔥 IMPORTANTE (resolve seu erro)
+# ATIVAR USUÁRIO
 def ativar_usuario(email):
     conn = conectar()
     cursor = conn.cursor()
@@ -102,11 +111,14 @@ def ativar_usuario(email):
     cursor.execute("""
         UPDATE users
         SET ativo = 1,
+            plano = 'pago',
             trial_expira_em = NOW() + INTERVAL '30 days'
         WHERE email = %s
     """, (email,))
 
     conn.commit()
     conn.close()
+
+    log(email, "pagamento_aprovado")
 
     return True
