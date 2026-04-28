@@ -32,7 +32,7 @@ def log(email, acao):
 
 
 # =========================
-# 🧠 CALCULAR DIAS (CORRETO)
+# 🧠 CALCULAR DIAS
 # =========================
 def calcular_dias_restantes(data):
     if not data:
@@ -41,7 +41,6 @@ def calcular_dias_restantes(data):
     agora = datetime.now()
     diff = data - agora
 
-    # 🔥 cálculo correto (sem bug de arredondamento)
     return max(0, int(diff.total_seconds() / 86400) + 1)
 
 
@@ -100,17 +99,18 @@ def login_user(email, senha, device_id):
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # dispositivo
+        # dispositivo (leve melhoria)
         if device_db and device_db != device_id:
-            return {"erro": "Conta já usada em outro dispositivo"}
+            return {"erro": "Conta em outro dispositivo"}
 
-        # salva device
+        # salva device se não existir
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
                 (device_id, email)
             )
 
+        # dias restantes
         dias = calcular_dias_restantes(trial_expira)
 
         if dias <= 0 and ativo == 0:
