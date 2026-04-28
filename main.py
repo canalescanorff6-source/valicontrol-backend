@@ -1,17 +1,20 @@
 from fastapi import FastAPI, Header, Request
 from pydantic import BaseModel
+from datetime import datetime
 from database import conectar, init_db
 from auth import login_user, register_user, ativar_usuario
-from pagamentos import criar_pagamento
-import os
+from pagamentos import criar_pagamento, sdk
 
 app = FastAPI()
 
-# MODELS
+# =========================
+# 📦 MODELS
+# =========================
 class UserAuth(BaseModel):
     email: str
     senha: str
     device_id: str
+
 
 class Produto(BaseModel):
     codigo: str
@@ -19,13 +22,19 @@ class Produto(BaseModel):
     validade: str
     quantidade: int
 
-# START
+
+# =========================
+# 🚀 START
+# =========================
 @app.on_event("startup")
 def startup():
     init_db()
     print("🚀 API ONLINE")
 
-# TOKEN
+
+# =========================
+# 🔐 TOKEN
+# =========================
 def get_email(token):
     if not token:
         return None
@@ -39,50 +48,68 @@ def get_email(token):
     conn.close()
     return user[0] if user else None
 
-# LOGIN
+
+# =========================
+# 🔐 LOGIN
+# =========================
 @app.post("/login")
 def login(data: UserAuth):
     return login_user(data.email, data.senha, data.device_id)
 
-# REGISTER
+
+# =========================
+# 👤 REGISTER
+# =========================
 @app.post("/register")
 def register(data: UserAuth):
     return register_user(data.email, data.senha, data.device_id)
 
-# PAGAMENTO
+
+# =========================
+# 💳 PAGAMENTO PIX
+# =========================
 @app.post("/pagamento")
 def pagamento(data: UserAuth):
     return criar_pagamento(data.email)
 
-# WEBHOOK
+
+# =========================
+# 🔔 WEBHOOK MERCADO PAGO
+# =========================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    print("WEBHOOK:", data)
+    print("📥 WEBHOOK:", data)
 
     try:
         if data.get("type") == "payment":
-            from pagamentos import sdk
-
             payment_id = data["data"]["id"]
-            payment = sdk.payment().get(payment_id)
 
+            payment = sdk.payment().get(payment_id)
             res = payment.get("response", {})
+
             status = res.get("status")
             email = res.get("external_reference")
 
+            print("STATUS:", status, "EMAIL:", email)
+
             if status == "approved" and email:
                 ativar_usuario(email)
+                print("✅ USUÁRIO ATIVADO")
 
     except Exception as e:
-        print("ERRO WEBHOOK:", e)
+        print("💥 ERRO WEBHOOK:", e)
 
     return {"ok": True}
 
-# PRODUTOS
+
+# =========================
+# 📦 PRODUTOS
+# =========================
 @app.get("/produtos")
 def listar(token: str = Header(None)):
     email = get_email(token)
+
     if not email:
         return {"erro": "token inválido"}
 
@@ -100,9 +127,30 @@ def listar(token: str = Header(None)):
     return dados
 
 
+@app.post("/produtos")
+def adicionar(data: Produto, token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
+    conn = conectar()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO produtos (codigo, nome, validade, quantidade, user_email)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (data.codigo, data.nome, data.validade, data.quantidade, email))
+
+    conn.commit()
+    conn.close()
+
+    return {"ok": True}
+
+
 @app.delete("/produtos/{id}")
 def excluir(id: int, token: str = Header(None)):
-    email = get_email_by_token(token)
+    email = get_email(token)
 
     if not email:
         return {"erro": "não autorizado"}
@@ -120,6 +168,68 @@ def excluir(id: int, token: str = Header(None)):
     return {"ok": True}
 
 
+# =========================
+# 📊 DASHBOARD STATS (CORRIGIDO)
+# =========================
+@app.get("/stats")
+def stats(token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
+    conn = conectar()
+    cursor = conn.cursor()
+
+    # total produtos
+    cursor.execute("SELECT COUNT(*) FROM produtos WHERE user_email=%s", (email,))
+    total = cursor.fetchone()[0] or 0
+
+    # vencidos
+    cursor.execute("""
+        SELECT COUNT(*) FROM produtos 
+        WHERE user_email=%s AND validade < CURRENT_DATE
+    """, (email,))
+    vencidos = cursor.fetchone()[0] or 0
+
+    # próximos
+    cursor.execute("""
+        SELECT COUNT(*) FROM produtos 
+        WHERE user_email=%s 
+        AND validade BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+    """, (email,))
+    proximos = cursor.fetchone()[0] or 0
+
+    # 🔥 TRIAL
+    cursor.execute("""
+        SELECT trial_expira_em, ativo FROM users WHERE email=%s
+    """, (email,))
+    user = cursor.fetchone()
+
+    trial_restante = 0
+    ativo = 0
+
+    if user:
+        trial_expira, ativo = user
+
+        if trial_expira:
+            trial_restante = max(0, (trial_expira - datetime.now()).days)
+
+    conn.close()
+
+    return {
+        "total": total,
+        "vencidos": vencidos,
+        "proximos": proximos,
+        "trial_restante": trial_restante,
+        "limite": 50,
+        "plano": "PRO" if ativo == 1 else "TRIAL"
+    }
+
+
+# =========================
+# 🧪 TESTE
+# =========================
 @app.get("/")
 def home():
     return {"status": "API ONLINE"}
