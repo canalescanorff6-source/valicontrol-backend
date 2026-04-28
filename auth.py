@@ -32,6 +32,20 @@ def log(email, acao):
 
 
 # =========================
+# 🧠 CALCULAR DIAS (CORRETO)
+# =========================
+def calcular_dias_restantes(data):
+    if not data:
+        return 0
+
+    agora = datetime.now()
+    diff = data - agora
+
+    # 🔥 cálculo correto (sem bug de arredondamento)
+    return max(0, int(diff.total_seconds() / 86400) + 1)
+
+
+# =========================
 # 📝 REGISTER
 # =========================
 def register_user(email, senha, device_id):
@@ -97,13 +111,7 @@ def login_user(email, senha, device_id):
                 (device_id, email)
             )
 
-        agora = datetime.now()
-
-        # 🔥 PROTEÇÃO CONTRA NULL
-        if trial_expira:
-            dias = max(0, (trial_expira - agora).days)
-        else:
-            dias = 0
+        dias = calcular_dias_restantes(trial_expira)
 
         if dias <= 0 and ativo == 0:
             return {"status": "bloqueado", "trial_restante": 0}
@@ -143,13 +151,15 @@ def ativar_usuario(email):
         conn = conectar()
         cursor = conn.cursor()
 
+        nova_data = datetime.now() + timedelta(days=30)
+
         cursor.execute("""
             UPDATE users
             SET ativo = 1,
                 plano = 'pago',
-                trial_expira_em = NOW() + INTERVAL '30 days'
+                trial_expira_em = %s
             WHERE email = %s
-        """, (email,))
+        """, (nova_data, email))
 
         conn.commit()
 
