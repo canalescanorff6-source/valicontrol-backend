@@ -3,46 +3,68 @@ import uuid
 from datetime import datetime, timedelta
 from database import conectar
 
+
+# =========================
+# 🔐 UTIL
+# =========================
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
+
 
 def gerar_token():
     return str(uuid.uuid4())
 
+
 def log(email, acao):
-    conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO logs (email, acao) VALUES (%s, %s)",
-        (email, acao)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn = conectar()
+        cursor = conn.cursor()
 
-# REGISTER
-def register_user(email, senha, device_id):
-    conn = conectar()
-    cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO logs (email, acao) VALUES (%s, %s)",
+            (email, acao)
+        )
 
-    cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
-    if cursor.fetchone():
+        conn.commit()
         conn.close()
-        return {"erro": "Email já existe"}
+    except Exception as e:
+        print("ERRO LOG:", e)
 
-    agora = datetime.now()
-    trial = agora + timedelta(days=15)
 
-    cursor.execute("""
-        INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id)
-        VALUES (%s, %s, %s, %s, 0, %s)
-    """, (email, hash_senha(senha), agora, trial, device_id))
+# =========================
+# 📝 REGISTER
+# =========================
+def register_user(email, senha, device_id):
+    try:
+        conn = conectar()
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
+        if cursor.fetchone():
+            return {"erro": "Email já existe"}
 
-    return {"status": "ok"}
+        agora = datetime.now()
+        trial = agora + timedelta(days=15)
 
-# LOGIN
+        cursor.execute("""
+            INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id)
+            VALUES (%s, %s, %s, %s, 0, %s)
+        """, (email, hash_senha(senha), agora, trial, device_id))
+
+        conn.commit()
+        return {"status": "ok"}
+
+    except Exception as e:
+        print("ERRO REGISTER:", e)
+        return {"erro": "erro ao registrar"}
+
+    finally:
+        conn.close()
+
+
+# =========================
+# 🔑 LOGIN
+# =========================
 def login_user(email, senha, device_id):
     conn = conectar()
     cursor = conn.cursor()
@@ -60,12 +82,15 @@ def login_user(email, senha, device_id):
 
         senha_db, trial_expira, ativo, device_db = user
 
+        # senha
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
+        # dispositivo
         if device_db and device_db != device_id:
             return {"erro": "Conta já usada em outro dispositivo"}
 
+        # salva device
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -73,11 +98,17 @@ def login_user(email, senha, device_id):
             )
 
         agora = datetime.now()
-        dias = (trial_expira - agora).days if trial_expira else 0
+
+        # 🔥 PROTEÇÃO CONTRA NULL
+        if trial_expira:
+            dias = max(0, (trial_expira - agora).days)
+        else:
+            dias = 0
 
         if dias <= 0 and ativo == 0:
             return {"status": "bloqueado", "trial_restante": 0}
 
+        # token
         token = gerar_token()
 
         cursor.execute(
@@ -103,22 +134,32 @@ def login_user(email, senha, device_id):
     finally:
         conn.close()
 
-# ATIVAR USUÁRIO
+
+# =========================
+# 💳 ATIVAR USUÁRIO
+# =========================
 def ativar_usuario(email):
-    conn = conectar()
-    cursor = conn.cursor()
+    try:
+        conn = conectar()
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        UPDATE users
-        SET ativo = 1,
-            plano = 'pago',
-            trial_expira_em = NOW() + INTERVAL '30 days'
-        WHERE email = %s
-    """, (email,))
+        cursor.execute("""
+            UPDATE users
+            SET ativo = 1,
+                plano = 'pago',
+                trial_expira_em = NOW() + INTERVAL '30 days'
+            WHERE email = %s
+        """, (email,))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
-    log(email, "pagamento_aprovado")
+        log(email, "pagamento_aprovado")
 
-    return True
+        return True
+
+    except Exception as e:
+        print("ERRO ATIVAR:", e)
+        return False
+
+    finally:
+        conn.close()
