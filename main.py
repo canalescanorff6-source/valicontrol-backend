@@ -212,23 +212,6 @@ def stats(token: str = Header(None)):
     """, (email,))
     total = cursor.fetchone()[0] or 0
 
-    # VENCIDOS
-    cursor.execute("""
-        SELECT COUNT(*) FROM produtos 
-        WHERE user_email=%s 
-        AND TO_DATE(validade, 'YYYY-MM-DD') < CURRENT_DATE
-    """, (email,))
-    vencidos = cursor.fetchone()[0] or 0
-
-    # PROXIMOS
-    cursor.execute("""
-        SELECT COUNT(*) FROM produtos 
-        WHERE user_email=%s 
-        AND TO_DATE(validade, 'YYYY-MM-DD') 
-        BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
-    """, (email,))
-    proximos = cursor.fetchone()[0] or 0
-
     # USER
     cursor.execute("""
         SELECT trial_expira_em, ativo FROM users WHERE email=%s
@@ -239,19 +222,22 @@ def stats(token: str = Header(None)):
     ativo = 0
 
     if user:
-        trial_expira, ativo = user
+        trial_expira_em, ativo = user
 
-        if trial_expira:
+        if trial_expira_em:
             agora = datetime.now()
-            diff = trial_expira - agora
-            trial_restante = max(0, int(diff.total_seconds() / 86400) + 1)
+
+            if trial_expira_em:
+                diff = trial_expira_em - agora
+                dias = int(diff.total_seconds() / 86400)
+                dias = max(0, dias)
+            else:
+                dias = 0
 
     conn.close()
 
     return {
         "total": total,
-        "vencidos": vencidos,
-        "proximos": proximos,
         "trial_restante": trial_restante,
         "limite": 50,
         "plano": "PRO" if ativo else "TRIAL"
