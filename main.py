@@ -123,31 +123,36 @@ def listar(token: str = Header(None)):
 
 @app.post("/produtos")
 def adicionar(data: Produto, token: str = Header(None)):
-    email = get_email(token)
+    try:
+        email = get_email(token)
 
-    if not email:
-        return {"erro": "não autorizado"}
+        if not email:
+            return {"erro": "não autorizado"}
 
-    conn = conectar()
-    cursor = conn.cursor()
+        conn = conectar()
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        INSERT INTO produtos 
-        (codigo, nome, validade, quantidade, tipo_qtd, user_email)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (
-        data.codigo,
-        data.nome,
-        data.validade,
-        data.quantidade,
-        data.tipo_qtd,
-        email
-    ))
+        cursor.execute("""
+            INSERT INTO produtos 
+            (codigo, nome, validade, quantidade, tipo_qtd, user_email)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            data.codigo,
+            data.nome,
+            data.validade,
+            data.quantidade,
+            data.tipo_qtd,
+            email
+        ))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
 
-    return {"ok": True}
+        return {"ok": True}
+
+    except Exception as e:
+        print("ERRO INSERT:", e)
+        return {"erro": "erro ao salvar produto"}
 
 
 @app.delete("/produtos/{id}")
