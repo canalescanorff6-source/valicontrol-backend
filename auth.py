@@ -39,9 +39,14 @@ def calcular_dias_restantes(data):
         return 0
 
     agora = datetime.now()
-    diff = data - agora
 
-    return max(0, int(diff.total_seconds() / 86400) + 1)
+    # 🔥 ZERA HORAS (ESSENCIAL)
+    hoje = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+    expira = data.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    dias = (expira - hoje).days
+
+    return max(0, dias)
 
 
 # =========================
