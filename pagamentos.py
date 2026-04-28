@@ -3,39 +3,31 @@ from auth import ativar_usuario  # 🔥 IMPORTANTE
 import mercadopago
 import os
 
-# inicializa SDK
-sdk = mercadopago.SDK(os.getenv("MP_TOKEN"))
+try:
+    import mercadopago
+
+    MP_TOKEN = os.getenv("MP_TOKEN")
+    sdk = mercadopago.SDK(MP_TOKEN) if MP_TOKEN else None
+
+except Exception as e:
+    print("⚠️ MercadoPago erro:", e)
+    sdk = None
 
 
 def criar_pagamento(email):
+    if not sdk:
+        return {"erro": "Pagamento indisponível"}
+
     try:
-        payment_data = {
+        payment = sdk.payment().create({
             "transaction_amount": 10,
             "description": "Plano ValiControl",
             "payment_method_id": "pix",
-            "payer": {
-                "email": email
-            }
-        }
-
-        payment = sdk.payment().create(payment_data)
-
-        print("📥 RESPOSTA COMPLETA MP:", payment)
+            "payer": {"email": email}
+        })
 
         response = payment.get("response", {})
-
-        if not response:
-            return {"erro": "Resposta vazia do Mercado Pago"}
-
-        # pega dados do PIX
-        poi = response.get("point_of_interaction")
-
-        if not poi:
-            return {
-                "erro": "Pagamento não gerou PIX",
-                "debug": response
-            }
-
+        poi = response.get("point_of_interaction", {})
         transaction = poi.get("transaction_data", {})
 
         return {
@@ -46,5 +38,5 @@ def criar_pagamento(email):
         }
 
     except Exception as e:
-        print("💥 ERRO PIX:", e)
-        return {"erro": str(e)}
+        print("ERRO PIX:", e)
+        return {"erro": "falha pagamento"}
