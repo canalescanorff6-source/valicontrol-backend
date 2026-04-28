@@ -1,13 +1,17 @@
 from fastapi import FastAPI, Header
 from pydantic import BaseModel
-from database import conectar, init_db
+
+from database import init_db, conectar
 from auth import login_user, register_user
 from pagamentos import criar_pagamento
-import os
-import mercadopago
-print("✅ MERCADOPAGO OK")
 
 app = FastAPI()
+
+
+@app.on_event("startup")
+def start():
+    init_db()
+    print("🚀 API ONLINE")
 
 
 class UserAuth(BaseModel):
@@ -23,11 +27,11 @@ class Produto(BaseModel):
     quantidade: int
 
 
-class EmailRequest(BaseModel):
+class PayRequest(BaseModel):
     email: str
 
 
-def get_email_by_token(token):
+def get_email(token):
     if not token:
         return None
 
@@ -38,54 +42,40 @@ def get_email_by_token(token):
     user = cursor.fetchone()
 
     conn.close()
-
     return user[0] if user else None
 
 
-@app.on_event("startup")
-def startup():
-    init_db()
-    print("🚀 API ONLINE")
-
-
-# =========================
-# LOGIN / REGISTER
-# =========================
+# 🔐 LOGIN
 @app.post("/login")
 def login(data: UserAuth):
     return login_user(data.email, data.senha, data.device_id)
 
 
+# 👤 REGISTER
 @app.post("/register")
 def register(data: UserAuth):
     return register_user(data.email, data.senha, data.device_id)
 
 
-# =========================
-# PAGAMENTO PIX
-# =========================
+# 💳 PAGAMENTO
 @app.post("/pagar")
-def pagar(data: EmailRequest):
+def pagar(data: PayRequest):
     return criar_pagamento(data.email)
 
 
-# =========================
-# PRODUTOS
-# =========================
+# 📦 PRODUTOS
 @app.get("/produtos")
 def listar(token: str = Header(None)):
-    email = get_email_by_token(token)
-
+    email = get_email(token)
     if not email:
-        return {"erro": "token inválido"}
+        return {"erro": "não autorizado"}
 
     conn = conectar()
     cursor = conn.cursor()
 
     cursor.execute("""
         SELECT id, codigo, nome, validade, quantidade
-        FROM produtos
-        WHERE user_email=%s
+        FROM produtos WHERE user_email=%s
     """, (email,))
 
     dados = cursor.fetchall()
@@ -95,9 +85,8 @@ def listar(token: str = Header(None)):
 
 
 @app.post("/produtos")
-def adicionar(data: Produto, token: str = Header(None)):
-    email = get_email_by_token(token)
-
+def add(data: Produto, token: str = Header(None)):
+    email = get_email(token)
     if not email:
         return {"erro": "não autorizado"}
 
