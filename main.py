@@ -4,6 +4,8 @@ from database import conectar, init_db
 from auth import login_user, register_user
 from pagamentos import criar_pagamento
 import os
+import mercadopago
+print("✅ MERCADOPAGO OK")
 
 app = FastAPI()
 
