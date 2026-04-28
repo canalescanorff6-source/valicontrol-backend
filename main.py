@@ -211,22 +211,30 @@ def stats(token: str = Header(None)):
     conn = conectar()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM produtos WHERE user_email=%s", (email,))
+    # TOTAL
+    cursor.execute("""
+        SELECT COUNT(*) FROM produtos WHERE user_email=%s
+    """, (email,))
     total = cursor.fetchone()[0] or 0
 
-    cursor.execute("""
-        SELECT COUNT(*) FROM produtos 
-        WHERE user_email=%s AND validade < CURRENT_DATE
-    """, (email,))
-    vencidos = cursor.fetchone()[0] or 0
-
+    # VENCIDOS
     cursor.execute("""
         SELECT COUNT(*) FROM produtos 
         WHERE user_email=%s 
-        AND validade BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+        AND TO_DATE(validade, 'YYYY-MM-DD') < CURRENT_DATE
+    """, (email,))
+    vencidos = cursor.fetchone()[0] or 0
+
+    # PRÓXIMOS (7 dias)
+    cursor.execute("""
+        SELECT COUNT(*) FROM produtos 
+        WHERE user_email=%s 
+        AND TO_DATE(validade, 'YYYY-MM-DD') 
+        BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
     """, (email,))
     proximos = cursor.fetchone()[0] or 0
 
+    # USER
     cursor.execute("""
         SELECT trial_expira_em, ativo FROM users WHERE email=%s
     """, (email,))
