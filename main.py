@@ -220,7 +220,7 @@ def stats(token: str = Header(None)):
     """, (email,))
     vencidos = cursor.fetchone()[0] or 0
 
-    # PRÓXIMOS
+    # PROXIMOS
     cursor.execute("""
         SELECT COUNT(*) FROM produtos 
         WHERE user_email=%s 
@@ -243,10 +243,8 @@ def stats(token: str = Header(None)):
 
         if trial_expira:
             agora = datetime.now()
-
-            # 🔥 CORREÇÃO DEFINITIVA
-            dias = (trial_expira.date() - agora.date()).days
-            trial_restante = max(0, dias)
+            diff = trial_expira - agora
+            trial_restante = max(0, int(diff.total_seconds() / 86400) + 1)
 
     conn.close()
 
@@ -254,7 +252,7 @@ def stats(token: str = Header(None)):
         "total": total,
         "vencidos": vencidos,
         "proximos": proximos,
-        "trial_restante": int(trial_restante),
+        "trial_restante": trial_restante,
         "limite": 50,
         "plano": "PRO" if ativo else "TRIAL"
     }
