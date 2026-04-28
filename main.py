@@ -116,7 +116,6 @@ def listar(token: str = Header(None)):
             FROM produtos WHERE user_email=%s
         """, (email,))
     except:
-        # fallback caso coluna não exista ainda
         cursor.execute("""
             SELECT id, codigo, nome, validade, quantidade, '' as tipo_qtd
             FROM produtos WHERE user_email=%s
@@ -129,7 +128,7 @@ def listar(token: str = Header(None)):
 
 
 # =========================
-# ➕ ADICIONAR (CORRIGIDO)
+# ➕ ADICIONAR
 # =========================
 @app.post("/produtos")
 def adicionar(data: Produto, token: str = Header(None)):
@@ -139,7 +138,7 @@ def adicionar(data: Produto, token: str = Header(None)):
         if not email:
             return {"erro": "não autorizado"}
 
-        # 🔥 valida data (evita erro 500)
+        # valida data
         try:
             datetime.strptime(data.validade, "%Y-%m-%d")
         except:
@@ -148,22 +147,18 @@ def adicionar(data: Produto, token: str = Header(None)):
         conn = conectar()
         cursor = conn.cursor()
 
-        try:
-            cursor.execute("""
-                INSERT INTO produtos 
-                (codigo, nome, validade, quantidade, tipo_qtd, user_email)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (
-                data.codigo,
-                data.nome,
-                data.validade,
-                data.quantidade,
-                data.tipo_qtd,
-                email
-            ))
-        except Exception as db_error:
-            print("ERRO DB:", db_error)
-            return {"erro": "erro banco (provavelmente falta coluna tipo_qtd)"}
+        cursor.execute("""
+            INSERT INTO produtos 
+            (codigo, nome, validade, quantidade, tipo_qtd, user_email)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            data.codigo,
+            data.nome,
+            data.validade,
+            data.quantidade,
+            data.tipo_qtd,
+            email
+        ))
 
         conn.commit()
         conn.close()
@@ -199,7 +194,7 @@ def excluir(id: int, token: str = Header(None)):
 
 
 # =========================
-# 📊 STATS
+# 📊 STATS (CORRIGIDO)
 # =========================
 @app.get("/stats")
 def stats(token: str = Header(None)):
@@ -225,7 +220,7 @@ def stats(token: str = Header(None)):
     """, (email,))
     vencidos = cursor.fetchone()[0] or 0
 
-    # PRÓXIMOS (7 dias)
+    # PRÓXIMOS
     cursor.execute("""
         SELECT COUNT(*) FROM produtos 
         WHERE user_email=%s 
@@ -245,8 +240,13 @@ def stats(token: str = Header(None)):
 
     if user:
         trial_expira, ativo = user
+
         if trial_expira:
-            trial_restante = max(0, (trial_expira - datetime.now()).days)
+            agora = datetime.now()
+
+            # 🔥 CORREÇÃO DEFINITIVA
+            dias = (trial_expira.date() - agora.date()).days
+            trial_restante = max(0, dias)
 
     conn.close()
 
@@ -254,7 +254,7 @@ def stats(token: str = Header(None)):
         "total": total,
         "vencidos": vencidos,
         "proximos": proximos,
-        "trial_restante": trial_restante,
+        "trial_restante": int(trial_restante),
         "limite": 50,
         "plano": "PRO" if ativo else "TRIAL"
     }
