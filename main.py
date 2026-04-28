@@ -21,7 +21,7 @@ class Produto(BaseModel):
     nome: str
     validade: str
     quantidade: int
-    tipo_qtd: str  # 🔥 corrigido
+    tipo_qtd: str
 
 
 # =========================
@@ -98,7 +98,7 @@ async def webhook(request: Request):
 
 
 # =========================
-# 📦 PRODUTOS
+# 📦 LISTAR
 # =========================
 @app.get("/produtos")
 def listar(token: str = Header(None)):
@@ -110,10 +110,17 @@ def listar(token: str = Header(None)):
     conn = conectar()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT id, codigo, nome, validade, quantidade, tipo_qtd
-        FROM produtos WHERE user_email=%s
-    """, (email,))
+    try:
+        cursor.execute("""
+            SELECT id, codigo, nome, validade, quantidade, tipo_qtd
+            FROM produtos WHERE user_email=%s
+        """, (email,))
+    except:
+        # fallback caso coluna não exista ainda
+        cursor.execute("""
+            SELECT id, codigo, nome, validade, quantidade, '' as tipo_qtd
+            FROM produtos WHERE user_email=%s
+        """, (email,))
 
     dados = cursor.fetchall()
     conn.close()
@@ -121,6 +128,9 @@ def listar(token: str = Header(None)):
     return dados
 
 
+# =========================
+# ➕ ADICIONAR (CORRIGIDO)
+# =========================
 @app.post("/produtos")
 def adicionar(data: Produto, token: str = Header(None)):
     try:
@@ -129,21 +139,31 @@ def adicionar(data: Produto, token: str = Header(None)):
         if not email:
             return {"erro": "não autorizado"}
 
+        # 🔥 valida data (evita erro 500)
+        try:
+            datetime.strptime(data.validade, "%Y-%m-%d")
+        except:
+            return {"erro": "data inválida, use yyyy-MM-dd"}
+
         conn = conectar()
         cursor = conn.cursor()
 
-        cursor.execute("""
-            INSERT INTO produtos 
-            (codigo, nome, validade, quantidade, tipo_qtd, user_email)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (
-            data.codigo,
-            data.nome,
-            data.validade,
-            data.quantidade,
-            data.tipo_qtd,
-            email
-        ))
+        try:
+            cursor.execute("""
+                INSERT INTO produtos 
+                (codigo, nome, validade, quantidade, tipo_qtd, user_email)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                data.codigo,
+                data.nome,
+                data.validade,
+                data.quantidade,
+                data.tipo_qtd,
+                email
+            ))
+        except Exception as db_error:
+            print("ERRO DB:", db_error)
+            return {"erro": "erro banco (provavelmente falta coluna tipo_qtd)"}
 
         conn.commit()
         conn.close()
@@ -155,6 +175,9 @@ def adicionar(data: Produto, token: str = Header(None)):
         return {"erro": "erro ao salvar produto"}
 
 
+# =========================
+# ❌ EXCLUIR
+# =========================
 @app.delete("/produtos/{id}")
 def excluir(id: int, token: str = Header(None)):
     email = get_email(token)
@@ -176,7 +199,7 @@ def excluir(id: int, token: str = Header(None)):
 
 
 # =========================
-# 📊 STATS (COMPATÍVEL COM DASHBOARD)
+# 📊 STATS
 # =========================
 @app.get("/stats")
 def stats(token: str = Header(None)):
