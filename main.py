@@ -4,6 +4,7 @@ from datetime import datetime
 from database import conectar, init_db
 from auth import login_user, register_user, ativar_usuario
 from pagamentos import criar_pagamento, sdk
+from auth import calcular_dias_restantes  # 🔥 IMPORTANTE
 
 app = FastAPI()
 
@@ -206,13 +207,17 @@ def stats(token: str = Header(None)):
     conn = conectar()
     cursor = conn.cursor()
 
-    # TOTAL
+    # =========================
+    # 📦 TOTAL PRODUTOS
+    # =========================
     cursor.execute("""
         SELECT COUNT(*) FROM produtos WHERE user_email=%s
     """, (email,))
     total = cursor.fetchone()[0] or 0
 
-    # USER
+    # =========================
+    # 👤 DADOS DO USUÁRIO
+    # =========================
     cursor.execute("""
         SELECT trial_expira_em, ativo FROM users WHERE email=%s
     """, (email,))
@@ -224,22 +229,20 @@ def stats(token: str = Header(None)):
     if user:
         trial_expira_em, ativo = user
 
-        if trial_expira_em:
-            agora = datetime.now()
-
-            if trial_expira_em:
-                diff = trial_expira_em - agora
-                dias = int(diff.total_seconds() / 86400)
-                dias = max(0, dias)
-            else:
-                dias = 0
+        # 🔥 CORREÇÃO REAL AQUI
+        trial_restante = calcular_dias_restantes(trial_expira_em)
 
     conn.close()
+
+    # =========================
+    # 🎯 LIMITE DINÂMICO
+    # =========================
+    limite = 100 if ativo else 50
 
     return {
         "total": total,
         "trial_restante": trial_restante,
-        "limite": 50,
+        "limite": limite,
         "plano": "PRO" if ativo else "TRIAL"
     }
 
