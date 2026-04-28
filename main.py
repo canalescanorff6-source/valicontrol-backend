@@ -195,6 +195,58 @@ def excluir(id: int, token: str = Header(None)):
 
 
 # =========================
+# ✏️ ATUALIZAR PRODUTO (FALTAVA ISSO)
+# =========================
+@app.put("/produtos/{id}")
+def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
+    # valida data
+    try:
+        datetime.strptime(data.validade, "%Y-%m-%d")
+    except:
+        return {"erro": "data inválida, use yyyy-MM-dd"}
+
+    conn = conectar()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE produtos
+            SET codigo=%s,
+                nome=%s,
+                validade=%s,
+                quantidade=%s,
+                tipo_qtd=%s
+            WHERE id=%s AND user_email=%s
+        """, (
+            data.codigo,
+            data.nome,
+            data.validade,
+            data.quantidade,
+            data.tipo_qtd,
+            id,
+            email
+        ))
+
+        # 🔥 IMPORTANTE: verifica se realmente atualizou
+        if cursor.rowcount == 0:
+            return {"erro": "produto não encontrado"}
+
+        conn.commit()
+        conn.close()
+
+        return {"ok": True}
+
+    except Exception as e:
+        print("ERRO UPDATE:", e)
+        return {"erro": "erro ao atualizar produto"}
+
+
+# =========================
 # 📊 STATS (CORRIGIDO)
 # =========================
 @app.get("/stats")
