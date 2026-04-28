@@ -1,10 +1,8 @@
 import psycopg2
 import os
 
-
 def conectar():
     return psycopg2.connect(os.getenv("DATABASE_URL"))
-
 
 def init_db():
     conn = conectar()
@@ -19,7 +17,8 @@ def init_db():
             criado_em TIMESTAMP,
             trial_expira_em TIMESTAMP,
             ativo INTEGER DEFAULT 0,
-            device_id TEXT
+            device_id TEXT,
+            plano TEXT DEFAULT 'trial'
         )
     """)
 
@@ -34,7 +33,14 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS logs (
+            id SERIAL PRIMARY KEY,
+            email TEXT,
+            acao TEXT,
+            criado_em TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
     conn.commit()
     conn.close()
-
-    print("✅ DB OK")
