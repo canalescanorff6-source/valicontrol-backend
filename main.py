@@ -74,24 +74,36 @@ def pagamento(data: UserAuth):
 
 
 # =========================
-# 🔔 WEBHOOK ASAAS
+# 🔔 WEBHOOK ASAAS (CORRIGIDO)
 # =========================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
 
+    print("\n🔔 WEBHOOK RECEBIDO")
+    print(data)
+
     try:
-        if data.get("event") in ["PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"]:
+        evento = data.get("event")
+
+        if evento in ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]:
             payment = data.get("payment", {})
 
             email = payment.get("externalReference")
             status = payment.get("status")
 
-            if status == "CONFIRMED" and email:
+            print("📊 STATUS:", status)
+            print("📧 EMAIL:", email)
+
+            # 🔥 aceita ambos os status
+            if status in ["RECEIVED", "CONFIRMED"] and email:
                 ativar_usuario(email)
+                print("✅ USUÁRIO ATIVADO:", email)
+            else:
+                print("⚠️ NÃO ATIVADO")
 
     except Exception as e:
-        print("ERRO WEBHOOK:", e)
+        print("❌ ERRO WEBHOOK:", e)
 
     return {"ok": True}
 
