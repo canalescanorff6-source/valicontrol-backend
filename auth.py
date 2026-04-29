@@ -16,7 +16,6 @@ def gerar_token():
 
 
 def log(email, acao):
-    conn = None
     try:
         conn = conectar()
         cursor = conn.cursor()
@@ -32,8 +31,7 @@ def log(email, acao):
         print("ERRO LOG:", e)
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
@@ -57,15 +55,16 @@ def calcular_dias_restantes(data):
 # 📝 REGISTER
 # =========================
 def register_user(email, senha, device_id):
-    conn = None
     try:
         conn = conectar()
         cursor = conn.cursor()
 
+        # email único
         cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
         if cursor.fetchone():
             return {"erro": "Email já existe"}
 
+        # dispositivo único
         cursor.execute("SELECT id FROM users WHERE device_id=%s", (device_id,))
         if cursor.fetchone():
             return {"erro": "Já existe uma conta neste dispositivo"}
@@ -74,8 +73,8 @@ def register_user(email, senha, device_id):
         trial = agora + timedelta(days=15)
 
         cursor.execute("""
-            INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id, is_admin)
-            VALUES (%s, %s, %s, %s, 0, %s, FALSE)
+            INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id)
+            VALUES (%s, %s, %s, %s, 0, %s)
         """, (email, hash_senha(senha), agora, trial, device_id))
 
         conn.commit()
@@ -86,24 +85,22 @@ def register_user(email, senha, device_id):
 
     except Exception as e:
         print("ERRO REGISTER:", e)
-        return {"erro": str(e)}  # 🔥 MOSTRA ERRO REAL
+        return {"erro": "erro ao registrar"}
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
 # 🔑 LOGIN
 # =========================
 def login_user(email, senha, device_id):
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
+    try:
         cursor.execute("""
-            SELECT senha, trial_expira_em, ativo, device_id, is_admin
+            SELECT senha, trial_expira_em, ativo, device_id
             FROM users WHERE email=%s
         """, (email,))
 
@@ -113,14 +110,16 @@ def login_user(email, senha, device_id):
             return {"erro": "Usuário não existe"}
 
         senha_db, trial_expira, ativo, device_db = user
-        is_admin = False
 
+        # senha
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
+        # dispositivo travado
         if device_db and device_db != device_id:
             return {"erro": "Conta vinculada a outro dispositivo"}
 
+        # salva device se não existir
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -135,6 +134,7 @@ def login_user(email, senha, device_id):
                 "trial_restante": 0
             }
 
+        # gera token
         token = gerar_token()
 
         cursor.execute(
@@ -150,28 +150,26 @@ def login_user(email, senha, device_id):
             "status": "ok",
             "token": token,
             "trial_restante": dias,
-            "ativo": ativo,
-            "is_admin": is_admin
+            "ativo": ativo
         }
 
     except Exception as e:
         print("ERRO LOGIN:", e)
-        return {"erro": str(e)}  # 🔥 MOSTRA ERRO REAL
+        return {"erro": "falha no login"}
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
-# 💳 ATIVAR USUÁRIO
+# 💳 ATIVAR USUÁRIO (ANTI DUPLICADO)
 # =========================
 def ativar_usuario(email):
-    conn = None
     try:
         conn = conectar()
         cursor = conn.cursor()
 
+        # 🔥 evita ativar duas vezes
         cursor.execute("SELECT ativo FROM users WHERE email=%s", (email,))
         user = cursor.fetchone()
 
@@ -205,5 +203,4 @@ def ativar_usuario(email):
         return False
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
