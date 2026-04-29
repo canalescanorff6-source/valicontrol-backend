@@ -11,7 +11,8 @@ def conectar():
     if not url:
         raise Exception("DATABASE_URL não definida")
 
-    return psycopg2.connect(url)
+    # 🔥 Render usa SSL obrigatoriamente
+    return psycopg2.connect(url, sslmode="require")
 
 
 # =========================
@@ -54,7 +55,7 @@ def init_db():
             )
         """)
 
-        # 🔥 GARANTE COLUNA tipo_qtd (MIGRAÇÃO AUTOMÁTICA)
+        # 🔥 MIGRAÇÃO SEGURA tipo_qtd
         cursor.execute("""
             DO $$
             BEGIN
@@ -78,6 +79,19 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 email TEXT,
                 acao TEXT,
+                criado_em TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
+        # =========================
+        # 💳 PAGAMENTOS (🔥 NOVO)
+        # =========================
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pagamentos (
+                id SERIAL PRIMARY KEY,
+                payment_id TEXT UNIQUE,
+                email TEXT,
+                status TEXT,
                 criado_em TIMESTAMP DEFAULT NOW()
             )
         """)
