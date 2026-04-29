@@ -73,8 +73,8 @@ def register_user(email, senha, device_id):
         trial = agora + timedelta(days=15)
 
         cursor.execute("""
-            INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id)
-            VALUES (%s, %s, %s, %s, 0, %s)
+            INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id, is_admin)
+            VALUES (%s, %s, %s, %s, 0, %s, FALSE)
         """, (email, hash_senha(senha), agora, trial, device_id))
 
         conn.commit()
@@ -92,7 +92,7 @@ def register_user(email, senha, device_id):
 
 
 # =========================
-# 🔑 LOGIN
+# 🔑 LOGIN (COM ADMIN)
 # =========================
 def login_user(email, senha, device_id):
     conn = conectar()
@@ -100,7 +100,7 @@ def login_user(email, senha, device_id):
 
     try:
         cursor.execute("""
-            SELECT senha, trial_expira_em, ativo, device_id
+            SELECT senha, trial_expira_em, ativo, device_id, is_admin
             FROM users WHERE email=%s
         """, (email,))
 
@@ -109,17 +109,17 @@ def login_user(email, senha, device_id):
         if not user:
             return {"erro": "Usuário não existe"}
 
-        senha_db, trial_expira, ativo, device_db = user
+        senha_db, trial_expira, ativo, device_db, is_admin = user
 
-        # senha
+        # 🔐 senha
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # dispositivo travado
+        # 📱 dispositivo travado
         if device_db and device_db != device_id:
             return {"erro": "Conta vinculada a outro dispositivo"}
 
-        # salva device se não existir
+        # 📲 salva device se não existir
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -134,7 +134,7 @@ def login_user(email, senha, device_id):
                 "trial_restante": 0
             }
 
-        # gera token
+        # 🔑 gera token
         token = gerar_token()
 
         cursor.execute(
@@ -150,7 +150,8 @@ def login_user(email, senha, device_id):
             "status": "ok",
             "token": token,
             "trial_restante": dias,
-            "ativo": ativo
+            "ativo": ativo,
+            "is_admin": is_admin
         }
 
     except Exception as e:
@@ -162,14 +163,13 @@ def login_user(email, senha, device_id):
 
 
 # =========================
-# 💳 ATIVAR USUÁRIO (ANTI DUPLICADO)
+# 💳 ATIVAR USUÁRIO
 # =========================
 def ativar_usuario(email):
     try:
         conn = conectar()
         cursor = conn.cursor()
 
-        # 🔥 evita ativar duas vezes
         cursor.execute("SELECT ativo FROM users WHERE email=%s", (email,))
         user = cursor.fetchone()
 
