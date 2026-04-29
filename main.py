@@ -66,7 +66,7 @@ def register(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAMENTO
+# 💳 PAGAMENTO (POST)
 # =========================
 @app.post("/pagamento")
 def pagamento(data: UserAuth):
@@ -74,7 +74,15 @@ def pagamento(data: UserAuth):
 
 
 # =========================
-# 🔔 WEBHOOK ASAAS (CORRIGIDO)
+# 💳 PAGAR (GET - NOVO)
+# =========================
+@app.get("/pagar")
+def pagar(email: str):
+    return criar_pagamento(email)
+
+
+# =========================
+# 🔔 WEBHOOK ASAAS
 # =========================
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -95,7 +103,6 @@ async def webhook(request: Request):
             print("📊 STATUS:", status)
             print("📧 EMAIL:", email)
 
-            # 🔥 aceita ambos os status
             if status in ["RECEIVED", "CONFIRMED"] and email:
                 ativar_usuario(email)
                 print("✅ USUÁRIO ATIVADO:", email)
