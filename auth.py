@@ -16,6 +16,7 @@ def gerar_token():
 
 
 def log(email, acao):
+    conn = None
     try:
         conn = conectar()
         cursor = conn.cursor()
@@ -31,7 +32,8 @@ def log(email, acao):
         print("ERRO LOG:", e)
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
@@ -55,16 +57,15 @@ def calcular_dias_restantes(data):
 # 📝 REGISTER
 # =========================
 def register_user(email, senha, device_id):
+    conn = None
     try:
         conn = conectar()
         cursor = conn.cursor()
 
-        # email único
         cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
         if cursor.fetchone():
             return {"erro": "Email já existe"}
 
-        # dispositivo único
         cursor.execute("SELECT id FROM users WHERE device_id=%s", (device_id,))
         if cursor.fetchone():
             return {"erro": "Já existe uma conta neste dispositivo"}
@@ -85,20 +86,22 @@ def register_user(email, senha, device_id):
 
     except Exception as e:
         print("ERRO REGISTER:", e)
-        return {"erro": "erro ao registrar"}
+        return {"erro": str(e)}  # 🔥 MOSTRA ERRO REAL
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
-# 🔑 LOGIN (COM ADMIN)
+# 🔑 LOGIN
 # =========================
 def login_user(email, senha, device_id):
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("""
             SELECT senha, trial_expira_em, ativo, device_id, is_admin
             FROM users WHERE email=%s
@@ -111,15 +114,12 @@ def login_user(email, senha, device_id):
 
         senha_db, trial_expira, ativo, device_db, is_admin = user
 
-        # 🔐 senha
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # 📱 dispositivo travado
         if device_db and device_db != device_id:
             return {"erro": "Conta vinculada a outro dispositivo"}
 
-        # 📲 salva device se não existir
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -134,7 +134,6 @@ def login_user(email, senha, device_id):
                 "trial_restante": 0
             }
 
-        # 🔑 gera token
         token = gerar_token()
 
         cursor.execute(
@@ -156,16 +155,18 @@ def login_user(email, senha, device_id):
 
     except Exception as e:
         print("ERRO LOGIN:", e)
-        return {"erro": "falha no login"}
+        return {"erro": str(e)}  # 🔥 MOSTRA ERRO REAL
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
 # 💳 ATIVAR USUÁRIO
 # =========================
 def ativar_usuario(email):
+    conn = None
     try:
         conn = conectar()
         cursor = conn.cursor()
@@ -203,4 +204,5 @@ def ativar_usuario(email):
         return False
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
