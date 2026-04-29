@@ -26,9 +26,12 @@ def log(email, acao):
         )
 
         conn.commit()
-        conn.close()
+
     except Exception as e:
         print("ERRO LOG:", e)
+
+    finally:
+        conn.close()
 
 
 # =========================
@@ -40,7 +43,6 @@ def calcular_dias_restantes(data):
 
     agora = datetime.now()
 
-    # 🔥 ZERA HORAS (ESSENCIAL)
     hoje = agora.replace(hour=0, minute=0, second=0, microsecond=0)
     expira = data.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -57,12 +59,12 @@ def register_user(email, senha, device_id):
         conn = conectar()
         cursor = conn.cursor()
 
-        # 🔥 BLOQUEIO POR EMAIL
+        # email único
         cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
         if cursor.fetchone():
             return {"erro": "Email já existe"}
 
-        # 🔥 BLOQUEIO POR DISPOSITIVO
+        # dispositivo único
         cursor.execute("SELECT id FROM users WHERE device_id=%s", (device_id,))
         if cursor.fetchone():
             return {"erro": "Já existe uma conta neste dispositivo"}
@@ -76,6 +78,9 @@ def register_user(email, senha, device_id):
         """, (email, hash_senha(senha), agora, trial, device_id))
 
         conn.commit()
+
+        log(email, "registro")
+
         return {"status": "ok"}
 
     except Exception as e:
@@ -110,9 +115,9 @@ def login_user(email, senha, device_id):
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # dispositivo (leve melhoria)
+        # dispositivo travado
         if device_db and device_db != device_id:
-            return {"erro": "Conta em outro dispositivo"}
+            return {"erro": "Conta vinculada a outro dispositivo"}
 
         # salva device se não existir
         if not device_db:
@@ -121,13 +126,15 @@ def login_user(email, senha, device_id):
                 (device_id, email)
             )
 
-        # dias restantes
         dias = calcular_dias_restantes(trial_expira)
 
         if dias <= 0 and ativo == 0:
-            return {"status": "bloqueado", "trial_restante": 0}
+            return {
+                "status": "bloqueado",
+                "trial_restante": 0
+            }
 
-        # token
+        # gera token
         token = gerar_token()
 
         cursor.execute(
@@ -155,12 +162,25 @@ def login_user(email, senha, device_id):
 
 
 # =========================
-# 💳 ATIVAR USUÁRIO
+# 💳 ATIVAR USUÁRIO (ANTI DUPLICADO)
 # =========================
 def ativar_usuario(email):
     try:
         conn = conectar()
         cursor = conn.cursor()
+
+        # 🔥 evita ativar duas vezes
+        cursor.execute("SELECT ativo FROM users WHERE email=%s", (email,))
+        user = cursor.fetchone()
+
+        if not user:
+            return False
+
+        ativo = user[0]
+
+        if ativo == 1:
+            print("⚠️ Usuário já ativo")
+            return True
 
         nova_data = datetime.now() + timedelta(days=30)
 
