@@ -3,14 +3,14 @@ from pydantic import BaseModel
 from datetime import datetime
 
 # 🔥 IMPORT CORRIGIDO
-from backend.database import conectar, init_db
-from backend.auth import (
+from database import conectar, init_db
+from auth import (
     login_user,
     register_user,
     ativar_usuario,
     calcular_dias_restantes
 )
-from backend.pagamentos import criar_pagamento
+from pagamentos import criar_pagamento
 
 app = FastAPI()
 
