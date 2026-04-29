@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Header, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from datetime import datetime
 from database import conectar, init_db
@@ -66,7 +67,7 @@ def register(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAMENTO (POST)
+# 💳 PAGAMENTO (APP)
 # =========================
 @app.post("/pagamento")
 def pagamento(data: UserAuth):
@@ -74,11 +75,52 @@ def pagamento(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAR (GET - NOVO)
+# 💳 PAGAR (API JSON)
 # =========================
 @app.get("/pagar")
-def pagar(email: str):
-    return criar_pagamento(email)
+def pagar(email: str = None):
+    if not email:
+        return {
+            "erro": "Informe o email na URL",
+            "exemplo": "https://valicontrol-backend.onrender.com/pagar?email=teste@gmail.com"
+        }
+
+    data = criar_pagamento(email)
+
+    if "erro" in data:
+        return data
+
+    return {
+        "status": "ok",
+        "qr": data.get("qr"),
+        "qr_base64": data.get("qr_base64"),
+        "payment_id": data.get("payment_id")
+    }
+
+
+# =========================
+# 💳 PAGAR (TELA WEB)
+# =========================
+@app.get("/pagar-view", response_class=HTMLResponse)
+def pagar_view(email: str = None):
+    if not email:
+        return "<h2>Informe o email na URL</h2>"
+
+    data = criar_pagamento(email)
+
+    if "erro" in data:
+        return f"<h2>Erro: {data['erro']}</h2>"
+
+    return f"""
+    <html>
+    <body style="background:#020617;color:white;text-align:center;font-family:Arial">
+        <h1>Pagamento PIX</h1>
+        <img src="data:image/png;base64,{data['qr_base64']}" width="300"/>
+        <p style="word-break:break-all">{data['qr']}</p>
+        <p>Escaneie ou copie o código PIX</p>
+    </body>
+    </html>
+    """
 
 
 # =========================
