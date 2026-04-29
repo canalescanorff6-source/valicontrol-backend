@@ -1,15 +1,8 @@
 from fastapi import FastAPI, Header, Request
 from pydantic import BaseModel
 from datetime import datetime
-
-# 🔥 IMPORT CORRIGIDO
 from database import conectar, init_db
-from auth import (
-    login_user,
-    register_user,
-    ativar_usuario,
-    calcular_dias_restantes
-)
+from auth import login_user, register_user, ativar_usuario, calcular_dias_restantes
 from pagamentos import criar_pagamento
 
 app = FastAPI()
@@ -48,23 +41,15 @@ def get_email(token):
     if not token:
         return None
 
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
+    try:
         cursor.execute("SELECT email FROM users WHERE token=%s", (token,))
         user = cursor.fetchone()
-
         return user[0] if user else None
-
-    except Exception as e:
-        print("ERRO TOKEN:", e)
-        return None
-
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
@@ -81,7 +66,7 @@ def register(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAMENTO
+# 💳 PAGAMENTO (APP)
 # =========================
 @app.post("/pagamento")
 def pagamento(data: UserAuth):
@@ -89,15 +74,19 @@ def pagamento(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAR
+# 💳 PAGAR (INTELIGENTE)
 # =========================
 @app.get("/pagar")
 def pagar(email: str = None, token: str = Header(None)):
+    # prioridade: token (usuário logado)
     if token:
         email = get_email(token)
 
     if not email:
-        return {"erro": "não autorizado"}
+        return {
+            "erro": "não autorizado",
+            "dica": "use token no app ou ?email= no navegador"
+        }
 
     data = criar_pagamento(email)
 
@@ -113,7 +102,7 @@ def pagar(email: str = None, token: str = Header(None)):
 
 
 # =========================
-# 🔔 WEBHOOK
+# 🔔 WEBHOOK ASAAS
 # =========================
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -137,6 +126,8 @@ async def webhook(request: Request):
             if status in ["RECEIVED", "CONFIRMED"] and email:
                 ativar_usuario(email)
                 print("✅ USUÁRIO ATIVADO:", email)
+            else:
+                print("⚠️ NÃO ATIVADO")
 
     except Exception as e:
         print("❌ ERRO WEBHOOK:", e)
@@ -154,21 +145,17 @@ def listar(token: str = Header(None)):
     if not email:
         return {"erro": "token inválido"}
 
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
+    try:
         cursor.execute("""
             SELECT id, codigo, nome, validade, quantidade, tipo_qtd
             FROM produtos WHERE user_email=%s
         """, (email,))
-
         return cursor.fetchall()
-
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
@@ -186,11 +173,10 @@ def adicionar(data: Produto, token: str = Header(None)):
     except:
         return {"erro": "data inválida"}
 
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
+    try:
         cursor.execute("""
             INSERT INTO produtos 
             (codigo, nome, validade, quantidade, tipo_qtd, user_email)
@@ -209,11 +195,10 @@ def adicionar(data: Produto, token: str = Header(None)):
 
     except Exception as e:
         print("ERRO INSERT:", e)
-        return {"erro": str(e)}
+        return {"erro": "erro ao salvar produto"}
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
@@ -226,11 +211,10 @@ def excluir(id: int, token: str = Header(None)):
     if not email:
         return {"erro": "não autorizado"}
 
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
+    try:
         cursor.execute("""
             DELETE FROM produtos WHERE id=%s AND user_email=%s
         """, (id, email))
@@ -242,8 +226,7 @@ def excluir(id: int, token: str = Header(None)):
         return {"ok": True}
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
@@ -261,11 +244,10 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
     except:
         return {"erro": "data inválida"}
 
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
+    try:
         cursor.execute("""
             UPDATE produtos
             SET codigo=%s,
@@ -290,9 +272,12 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
         conn.commit()
         return {"ok": True}
 
+    except Exception as e:
+        print("ERRO UPDATE:", e)
+        return {"erro": "erro ao atualizar produto"}
+
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 # =========================
@@ -305,12 +290,13 @@ def stats(token: str = Header(None)):
     if not email:
         return {"erro": "não autorizado"}
 
-    conn = None
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
+    conn = conectar()
+    cursor = conn.cursor()
 
-        cursor.execute("SELECT COUNT(*) FROM produtos WHERE user_email=%s", (email,))
+    try:
+        cursor.execute("""
+            SELECT COUNT(*) FROM produtos WHERE user_email=%s
+        """, (email,))
         total = cursor.fetchone()[0] or 0
 
         cursor.execute("""
@@ -335,8 +321,7 @@ def stats(token: str = Header(None)):
         }
 
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 
 @app.get("/")
