@@ -1,45 +1,104 @@
+import requests
 import os
+from dotenv import load_dotenv
 
-sdk = None
+load_dotenv()
 
-try:
-    import mercadopago
+ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")
+BASE_URL = "https://api.asaas.com/v3"
 
-    MP_TOKEN = os.getenv("MP_TOKEN")
-
-    if MP_TOKEN:
-        sdk = mercadopago.SDK(MP_TOKEN)
-        print("✅ MercadoPago OK")
-    else:
-        print("⚠️ MP_TOKEN não definido")
-
-except Exception as e:
-    print("⚠️ MercadoPago não carregado:", e)
-    sdk = None
+if not ASAAS_API_KEY:
+    raise ValueError("API KEY não configurada")
 
 
-def criar_pagamento(email):
-    if not sdk:
-        return {"erro": "Pagamento indisponível"}
-
+# =========================
+# 👤 CRIAR CLIENTE
+# =========================
+def criar_cliente(email):
     try:
-        payment = sdk.payment().create({
-            "transaction_amount": 10,
-            "description": "Plano ValiControl",
-            "payment_method_id": "pix",
-            "payer": {"email": email},
-            "external_reference": email
-        })
+        r = requests.post(
+            f"{BASE_URL}/customers",
+            headers={
+                "access_token": ASAAS_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "name": email,
+                "email": email
+            }
+        )
 
-        response = payment.get("response", {})
-        poi = response.get("point_of_interaction", {})
-        transaction = poi.get("transaction_data", {})
+        data = r.json()
+
+        if "errors" in data:
+            r2 = requests.get(
+                f"{BASE_URL}/customers",
+                headers={"access_token": ASAAS_API_KEY},
+                params={"email": email}
+            )
+
+            clientes = r2.json().get("data", [])
+            if clientes:
+                return clientes[0]["id"]
+
+            return None
+
+        return data.get("id")
+
+    except Exception as e:
+        print("ERRO CLIENTE:", e)
+        return None
+
+
+# =========================
+# 💳 CRIAR PIX
+# =========================
+def criar_pagamento(email):
+    try:
+        customer_id = criar_cliente(email)
+
+        if not customer_id:
+            return {"erro": "cliente inválido"}
+
+        r = requests.post(
+            f"{BASE_URL}/payments",
+            headers={
+                "access_token": ASAAS_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "customer": customer_id,
+                "billingType": "PIX",
+                "value": 10.0,
+                "description": "Plano ValiControl",
+                "externalReference": email  # 🔥 ligação com usuário
+            }
+        )
+
+        data = r.json()
+
+        if "errors" in data:
+            print("ERRO ASAAS:", data)
+            return {"erro": "erro ao criar pagamento"}
+
+        payment_id = data["id"]
+
+        r2 = requests.get(
+            f"{BASE_URL}/payments/{payment_id}/pixQrCode",
+            headers={"access_token": ASAAS_API_KEY}
+        )
+
+        qr_data = r2.json()
+
+        if "errors" in qr_data:
+            print("ERRO QR:", qr_data)
+            return {"erro": "erro ao gerar QR"}
 
         return {
-            "qr": transaction.get("qr_code"),
-            "qr_base64": transaction.get("qr_code_base64"),
-            "payment_id": response.get("id"),
-            "status": response.get("status")
+            "qr": qr_data.get("payload"),
+            "qr_base64": qr_data.get("encodedImage"),
+            "payment_id": payment_id,
+            "customer_id": customer_id
         }
 
     except Exception as e:
