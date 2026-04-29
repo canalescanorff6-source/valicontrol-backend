@@ -3,9 +3,10 @@ from pydantic import BaseModel
 from datetime import datetime
 from database import conectar, init_db
 from auth import login_user, register_user, ativar_usuario, calcular_dias_restantes
-from pagamentos import criar_pagamento, sdk
+from pagamentos import criar_pagamento
 
 app = FastAPI()
+
 
 # =========================
 # 📦 MODELS
@@ -73,26 +74,20 @@ def pagamento(data: UserAuth):
 
 
 # =========================
-# 🔔 WEBHOOK (CORRIGIDO)
+# 🔔 WEBHOOK ASAAS
 # =========================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
 
-    if not sdk:
-        return {"ok": False}
-
     try:
-        if data.get("type") == "payment":
-            payment_id = data["data"]["id"]
+        if data.get("event") in ["PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"]:
+            payment = data.get("payment", {})
 
-            payment = sdk.payment().get(payment_id)
-            res = payment.get("response", {})
+            email = payment.get("externalReference")
+            status = payment.get("status")
 
-            status = res.get("status")
-            email = res.get("external_reference")
-
-            if status == "approved" and email:
+            if status == "CONFIRMED" and email:
                 ativar_usuario(email)
 
     except Exception as e:
@@ -168,7 +163,7 @@ def adicionar(data: Produto, token: str = Header(None)):
 
 
 # =========================
-# ❌ EXCLUIR (MELHORADO)
+# ❌ EXCLUIR
 # =========================
 @app.delete("/produtos/{id}")
 def excluir(id: int, token: str = Header(None)):
@@ -196,7 +191,7 @@ def excluir(id: int, token: str = Header(None)):
 
 
 # =========================
-# ✏️ ATUALIZAR (CORRIGIDO)
+# ✏️ ATUALIZAR
 # =========================
 @app.put("/produtos/{id}")
 def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
