@@ -1,9 +1,16 @@
 from fastapi import FastAPI, Header, Request
 from pydantic import BaseModel
 from datetime import datetime
-from database import conectar, init_db
-from auth import login_user, register_user, ativar_usuario, calcular_dias_restantes
-from pagamentos import criar_pagamento
+
+# 🔥 IMPORT CORRIGIDO
+from backend.database import conectar, init_db
+from backend.auth import (
+    login_user,
+    register_user,
+    ativar_usuario,
+    calcular_dias_restantes
+)
+from backend.pagamentos import criar_pagamento
 
 app = FastAPI()
 
@@ -82,7 +89,7 @@ def pagamento(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAR (INTELIGENTE)
+# 💳 PAGAR
 # =========================
 @app.get("/pagar")
 def pagar(email: str = None, token: str = Header(None)):
@@ -283,10 +290,6 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
         conn.commit()
         return {"ok": True}
 
-    except Exception as e:
-        print("ERRO UPDATE:", e)
-        return {"erro": str(e)}
-
     finally:
         if conn:
             conn.close()
@@ -307,9 +310,7 @@ def stats(token: str = Header(None)):
         conn = conectar()
         cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT COUNT(*) FROM produtos WHERE user_email=%s
-        """, (email,))
+        cursor.execute("SELECT COUNT(*) FROM produtos WHERE user_email=%s", (email,))
         total = cursor.fetchone()[0] or 0
 
         cursor.execute("""
