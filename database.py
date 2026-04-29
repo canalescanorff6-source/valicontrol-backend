@@ -1,3 +1,23 @@
+import psycopg2
+import os
+
+
+# =========================
+# 🔌 CONEXÃO
+# =========================
+def conectar():
+    url = os.getenv("DATABASE_URL")
+
+    if not url:
+        raise Exception("DATABASE_URL não definida")
+
+    # 🔥 Render usa SSL obrigatoriamente
+    return psycopg2.connect(url, sslmode="require")
+
+
+# =========================
+# 🚀 INIT DB (ROBUSTO)
+# =========================
 def init_db():
     conn = conectar()
     cursor = conn.cursor()
@@ -16,25 +36,8 @@ def init_db():
                 trial_expira_em TIMESTAMP,
                 ativo INTEGER DEFAULT 0,
                 device_id TEXT,
-                plano TEXT DEFAULT 'trial',
-                is_admin BOOLEAN DEFAULT FALSE
+                plano TEXT DEFAULT 'trial'
             )
-        """)
-
-        # 🔥 MIGRAÇÃO SEGURA is_admin
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_name='users'
-                    AND column_name='is_admin'
-                ) THEN
-                    ALTER TABLE users
-                    ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
-                END IF;
-            END$$;
         """)
 
         # =========================
@@ -52,7 +55,7 @@ def init_db():
             )
         """)
 
-        # 🔥 MIGRAÇÃO tipo_qtd
+        # 🔥 MIGRAÇÃO SEGURA tipo_qtd
         cursor.execute("""
             DO $$
             BEGIN
@@ -81,7 +84,7 @@ def init_db():
         """)
 
         # =========================
-        # 💳 PAGAMENTOS
+        # 💳 PAGAMENTOS (🔥 NOVO)
         # =========================
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS pagamentos (
@@ -94,7 +97,7 @@ def init_db():
         """)
 
         conn.commit()
-        print("✅ BANCO OK (COM MIGRAÇÃO)")
+        print("✅ BANCO OK")
 
     except Exception as e:
         print("❌ ERRO INIT DB:", e)
