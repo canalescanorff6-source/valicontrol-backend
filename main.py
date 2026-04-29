@@ -41,15 +41,23 @@ def get_email(token):
     if not token:
         return None
 
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("SELECT email FROM users WHERE token=%s", (token,))
         user = cursor.fetchone()
+
         return user[0] if user else None
+
+    except Exception as e:
+        print("ERRO TOKEN:", e)
+        return None
+
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
@@ -66,7 +74,7 @@ def register(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAMENTO (APP)
+# 💳 PAGAMENTO
 # =========================
 @app.post("/pagamento")
 def pagamento(data: UserAuth):
@@ -78,15 +86,11 @@ def pagamento(data: UserAuth):
 # =========================
 @app.get("/pagar")
 def pagar(email: str = None, token: str = Header(None)):
-    # prioridade: token (usuário logado)
     if token:
         email = get_email(token)
 
     if not email:
-        return {
-            "erro": "não autorizado",
-            "dica": "use token no app ou ?email= no navegador"
-        }
+        return {"erro": "não autorizado"}
 
     data = criar_pagamento(email)
 
@@ -102,7 +106,7 @@ def pagar(email: str = None, token: str = Header(None)):
 
 
 # =========================
-# 🔔 WEBHOOK ASAAS
+# 🔔 WEBHOOK
 # =========================
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -126,8 +130,6 @@ async def webhook(request: Request):
             if status in ["RECEIVED", "CONFIRMED"] and email:
                 ativar_usuario(email)
                 print("✅ USUÁRIO ATIVADO:", email)
-            else:
-                print("⚠️ NÃO ATIVADO")
 
     except Exception as e:
         print("❌ ERRO WEBHOOK:", e)
@@ -145,17 +147,21 @@ def listar(token: str = Header(None)):
     if not email:
         return {"erro": "token inválido"}
 
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("""
             SELECT id, codigo, nome, validade, quantidade, tipo_qtd
             FROM produtos WHERE user_email=%s
         """, (email,))
+
         return cursor.fetchall()
+
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
@@ -173,10 +179,11 @@ def adicionar(data: Produto, token: str = Header(None)):
     except:
         return {"erro": "data inválida"}
 
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("""
             INSERT INTO produtos 
             (codigo, nome, validade, quantidade, tipo_qtd, user_email)
@@ -195,10 +202,11 @@ def adicionar(data: Produto, token: str = Header(None)):
 
     except Exception as e:
         print("ERRO INSERT:", e)
-        return {"erro": "erro ao salvar produto"}
+        return {"erro": str(e)}
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
@@ -211,10 +219,11 @@ def excluir(id: int, token: str = Header(None)):
     if not email:
         return {"erro": "não autorizado"}
 
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("""
             DELETE FROM produtos WHERE id=%s AND user_email=%s
         """, (id, email))
@@ -226,7 +235,8 @@ def excluir(id: int, token: str = Header(None)):
         return {"ok": True}
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
@@ -244,10 +254,11 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
     except:
         return {"erro": "data inválida"}
 
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("""
             UPDATE produtos
             SET codigo=%s,
@@ -274,10 +285,11 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
 
     except Exception as e:
         print("ERRO UPDATE:", e)
-        return {"erro": "erro ao atualizar produto"}
+        return {"erro": str(e)}
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # =========================
@@ -290,10 +302,11 @@ def stats(token: str = Header(None)):
     if not email:
         return {"erro": "não autorizado"}
 
-    conn = conectar()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = conectar()
+        cursor = conn.cursor()
+
         cursor.execute("""
             SELECT COUNT(*) FROM produtos WHERE user_email=%s
         """, (email,))
@@ -321,7 +334,8 @@ def stats(token: str = Header(None)):
         }
 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 @app.get("/")
