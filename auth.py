@@ -112,7 +112,8 @@ def login_user(email, senha, device_id):
         if not user:
             return {"erro": "Usuário não existe"}
 
-        senha_db, trial_expira, ativo, device_db, is_admin = user
+        senha_db, trial_expira, ativo, device_db = user
+        is_admin = False
 
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
