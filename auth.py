@@ -222,16 +222,24 @@ def get_user_stats(token):
 
         dias = calcular_dias_restantes(trial_expira)
 
-        limite = 50 if ativo == 0 else 999999
+        # 🔥 LIMITE CORRETO
+        limite = 50 if ativo == 0 else 100
 
-        # 🔥 ESSA LINHA RESOLVE O 100%
+        # 🔥 TOTAL REAL DO BANCO (ANTI BUG)
         cursor.execute("""
             SELECT COUNT(*)
             FROM produtos
             WHERE user_email=%s
         """, (email,))
 
-        total = cursor.fetchone()[0]
+        total = cursor.fetchone()[0] or 0
+
+        # 🔥 PROTEÇÃO EXTRA (EVITA 100% BUGADO)
+        if total < 0:
+            total = 0
+
+        if limite <= 0:
+            limite = 50
 
         return {
             "trial_restante": dias,
