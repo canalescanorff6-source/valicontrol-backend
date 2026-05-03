@@ -58,26 +58,41 @@ def calcular_dias_restantes(data):
 # =========================
 # 📝 REGISTER
 # =========================
-def register_user(email, senha, device_id):
+def register_user(email, senha, device_id, ip):
     try:
         conn = conectar()
         cursor = conn.cursor()
 
+        # email único
         cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
         if cursor.fetchone():
             return {"erro": "Email já existe"}
 
+        # dispositivo único
         cursor.execute("SELECT id FROM users WHERE device_id=%s", (device_id,))
         if cursor.fetchone():
             return {"erro": "Já existe uma conta neste dispositivo"}
+
+        # 🔒 LIMITE POR IP (MAX 2 TRIAL)
+        cursor.execute("""
+            SELECT COUNT(*) FROM users
+            WHERE ip=%s AND ativo=0
+        """, (ip,))
+        total_ip = cursor.fetchone()[0]
+
+        if total_ip >= 2:
+            return {
+                "erro": "limite de contas trial atingido"
+            }
 
         agora = datetime.now()
         trial = agora + timedelta(days=15)
 
         cursor.execute("""
-            INSERT INTO users (email, senha, criado_em, trial_expira_em, ativo, device_id)
-            VALUES (%s, %s, %s, %s, 0, %s)
-        """, (email, hash_senha(senha), agora, trial, device_id))
+            INSERT INTO users 
+            (email, senha, criado_em, trial_expira_em, ativo, device_id, ip)
+            VALUES (%s, %s, %s, %s, 0, %s, %s)
+        """, (email, hash_senha(senha), agora, trial, device_id, ip))
 
         conn.commit()
 
@@ -116,7 +131,7 @@ def login_user(email, senha, device_id):
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        if device_db and device_db != device_id:
+        if ativo == 0 and device_db and device_db != device_id:
             return {"erro": "Conta vinculada a outro dispositivo"}
 
         if not device_db:
