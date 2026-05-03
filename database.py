@@ -92,8 +92,26 @@ def init_db():
                 payment_id TEXT UNIQUE,
                 email TEXT,
                 status TEXT,
-                criado_em TIMESTAMP DEFAULT NOW()
+                criado_em TIMESTAMP DEFAULT NOW ()
             )
+        """)
+
+        # =========================
+        # 🌐 MIGRAÇÃO IP (ANTI ABUSO)
+        # =========================
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name='users'
+                    AND column_name='ip'
+                ) THEN
+                    ALTER TABLE users
+                    ADD COLUMN ip TEXT;
+                END IF;
+            END$$;
         """)
 
         conn.commit()
