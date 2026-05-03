@@ -3,10 +3,6 @@ import uuid
 from datetime import datetime, timedelta
 from database import conectar
 
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
-
 
 # =========================
 # 🔐 UTIL
@@ -216,7 +212,7 @@ def ativar_usuario(email):
 
 
 # =========================
-# 📊 STATS (ADICIONADO)
+# 📊 STATS
 # =========================
 def get_user_stats(token):
     try:
@@ -237,10 +233,8 @@ def get_user_stats(token):
 
         dias = calcular_dias_restantes(trial_expira)
 
-        # 🔥 LIMITE CORRETO
         limite = 50 if ativo == 0 else 100
 
-        # 🔥 TOTAL REAL DO BANCO (ANTI BUG)
         cursor.execute("""
             SELECT COUNT(*)
             FROM produtos
@@ -249,7 +243,6 @@ def get_user_stats(token):
 
         total = cursor.fetchone()[0] or 0
 
-        # 🔥 PROTEÇÃO EXTRA (EVITA 100% BUGADO)
         if total < 0:
             total = 0
 
@@ -272,19 +265,3 @@ def get_user_stats(token):
 
     finally:
         conn.close()
-
-
-# =========================
-# 🌐 ENDPOINT
-# =========================
-@app.route("/stats", methods=["GET"])
-def stats():
-    token = request.headers.get("token")
-    return jsonify(get_user_stats(token))
-
-
-# =========================
-# ▶️ RUN
-# =========================
-if __name__ == "__main__":
-    app.run(debug=True)
