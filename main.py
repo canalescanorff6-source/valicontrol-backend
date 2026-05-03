@@ -66,27 +66,20 @@ def register(data: UserAuth):
 
 
 # =========================
-# 💳 PAGAMENTO (APP)
+# 💳 PAGAMENTO
 # =========================
 @app.post("/pagamento")
 def pagamento(data: UserAuth):
     return criar_pagamento(data.email)
 
 
-# =========================
-# 💳 PAGAR (INTELIGENTE)
-# =========================
 @app.get("/pagar")
 def pagar(email: str = None, token: str = Header(None)):
-    # prioridade: token (usuário logado)
     if token:
         email = get_email(token)
 
     if not email:
-        return {
-            "erro": "não autorizado",
-            "dica": "use token no app ou ?email= no navegador"
-        }
+        return {"erro": "não autorizado"}
 
     data = criar_pagamento(email)
 
@@ -102,14 +95,11 @@ def pagar(email: str = None, token: str = Header(None)):
 
 
 # =========================
-# 🔔 WEBHOOK ASAAS
+# 🔔 WEBHOOK
 # =========================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-
-    print("\n🔔 WEBHOOK RECEBIDO")
-    print(data)
 
     try:
         evento = data.get("event")
@@ -120,17 +110,11 @@ async def webhook(request: Request):
             email = payment.get("externalReference")
             status = payment.get("status")
 
-            print("📊 STATUS:", status)
-            print("📧 EMAIL:", email)
-
             if status in ["RECEIVED", "CONFIRMED"] and email:
                 ativar_usuario(email)
-                print("✅ USUÁRIO ATIVADO:", email)
-            else:
-                print("⚠️ NÃO ATIVADO")
 
     except Exception as e:
-        print("❌ ERRO WEBHOOK:", e)
+        print("ERRO WEBHOOK:", e)
 
     return {"ok": True}
 
@@ -159,7 +143,7 @@ def listar(token: str = Header(None)):
 
 
 # =========================
-# ➕ ADICIONAR
+# ➕ ADICIONAR (COM BLOQUEIO)
 # =========================
 @app.post("/produtos")
 def adicionar(data: Produto, token: str = Header(None)):
@@ -177,6 +161,27 @@ def adicionar(data: Produto, token: str = Header(None)):
     cursor = conn.cursor()
 
     try:
+        # 🔒 VERIFICAR LIMITE
+        cursor.execute("""
+            SELECT COUNT(*) FROM produtos WHERE user_email=%s
+        """, (email,))
+        total = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT ativo FROM users WHERE email=%s
+        """, (email,))
+        ativo = cursor.fetchone()[0]
+
+        limite = 100 if ativo else 50
+
+        if total >= limite:
+            return {
+                "erro": "limite atingido",
+                "limite": limite,
+                "total": total
+            }
+
+        # ✅ INSERT
         cursor.execute("""
             INSERT INTO produtos 
             (codigo, nome, validade, quantidade, tipo_qtd, user_email)
@@ -281,7 +286,7 @@ def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
 
 
 # =========================
-# 📊 STATS
+# 📊 STATS (COM USO %)
 # =========================
 @app.get("/stats")
 def stats(token: str = Header(None)):
@@ -313,10 +318,14 @@ def stats(token: str = Header(None)):
 
         limite = 100 if ativo else 50
 
+        # 🔥 USO %
+        uso = int((total / limite) * 100) if limite else 0
+
         return {
             "total": total,
             "trial_restante": trial_restante,
             "limite": limite,
+            "uso": uso,
             "plano": "PRO" if ativo else "TRIAL"
         }
 
@@ -324,6 +333,9 @@ def stats(token: str = Header(None)):
         conn.close()
 
 
+# =========================
+# 🏠 HOME
+# =========================
 @app.get("/")
 def home():
     return {"status": "API ONLINE"}
