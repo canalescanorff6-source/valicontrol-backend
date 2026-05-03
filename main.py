@@ -1,273 +1,337 @@
-import hashlib
-import uuid
-from datetime import datetime, timedelta
-from database import conectar
+from fastapi import FastAPI, Header, Request
+from pydantic import BaseModel
+from datetime import datetime
+from database import conectar, init_db
+from auth import login_user, register_user, ativar_usuario, calcular_dias_restantes
+from pagamentos import criar_pagamento
 
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
+app = FastAPI()
 
 
 # =========================
-# 🔐 UTIL
+# 📦 MODELS
 # =========================
-def hash_senha(senha):
-    return hashlib.sha256(senha.encode()).hexdigest()
+class UserAuth(BaseModel):
+    email: str
+    senha: str
+    device_id: str
 
 
-def gerar_token():
-    return str(uuid.uuid4())
+class Produto(BaseModel):
+    codigo: str
+    nome: str
+    validade: str
+    quantidade: int
+    tipo_qtd: str
 
 
-def log(email, acao):
+# =========================
+# 🚀 START
+# =========================
+@app.on_event("startup")
+def startup():
+    init_db()
+    print("🚀 API ONLINE")
+
+
+# =========================
+# 🔐 TOKEN
+# =========================
+def get_email(token):
+    if not token:
+        return None
+
+    conn = conectar()
+    cursor = conn.cursor()
+
     try:
-        conn = conectar()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "INSERT INTO logs (email, acao) VALUES (%s, %s)",
-            (email, acao)
-        )
-
-        conn.commit()
-
-    except Exception as e:
-        print("ERRO LOG:", e)
-
+        cursor.execute("SELECT email FROM users WHERE token=%s", (token,))
+        user = cursor.fetchone()
+        return user[0] if user else None
     finally:
         conn.close()
 
 
 # =========================
-# 🧠 CALCULAR DIAS
+# 🔐 LOGIN / REGISTER
 # =========================
-def calcular_dias_restantes(data):
-    if not data:
-        return 0
+@app.post("/login")
+def login(data: UserAuth):
+    return login_user(data.email, data.senha, data.device_id)
 
-    agora = datetime.now()
 
-    hoje = agora.replace(hour=0, minute=0, second=0, microsecond=0)
-    expira = data.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    dias = (expira - hoje).days
-
-    return max(0, dias)
+@app.post("/register")
+def register(data: UserAuth, request: Request):
+    ip = request.client.host
+    return register_user(data.email, data.senha, data.device_id, ip)
 
 
 # =========================
-# 📝 REGISTER
+# 💳 PAGAMENTO
 # =========================
-def register_user(email, senha, device_id, ip):
+@app.post("/pagamento")
+def pagamento(data: UserAuth):
+    return criar_pagamento(data.email)
+
+
+@app.get("/pagar")
+def pagar(email: str = None, token: str = Header(None)):
+    if token:
+        email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
+    data = criar_pagamento(email)
+
+    if "erro" in data:
+        return data
+
+    return {
+        "status": "ok",
+        "qr": data.get("qr"),
+        "qr_base64": data.get("qr_base64"),
+        "payment_id": data.get("payment_id")
+    }
+
+
+# =========================
+# 🔔 WEBHOOK
+# =========================
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
+
     try:
-        conn = conectar()
-        cursor = conn.cursor()
+        evento = data.get("event")
 
-        # email único
-        cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
-        if cursor.fetchone():
-            return {"erro": "Email já existe"}
+        if evento in ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]:
+            payment = data.get("payment", {})
 
-        # dispositivo único
-        cursor.execute("SELECT id FROM users WHERE device_id=%s", (device_id,))
-        if cursor.fetchone():
-            return {"erro": "Já existe uma conta neste dispositivo"}
+            email = payment.get("externalReference")
+            status = payment.get("status")
 
-        # 🔒 LIMITE POR IP (MAX 2 TRIAL)
-        cursor.execute("""
-            SELECT COUNT(*) FROM users
-            WHERE ip=%s AND ativo=0
-        """, (ip,))
-        total_ip = cursor.fetchone()[0]
-
-        if total_ip >= 2:
-            return {
-                "erro": "limite de contas trial atingido"
-            }
-
-        agora = datetime.now()
-        trial = agora + timedelta(days=15)
-
-        cursor.execute("""
-            INSERT INTO users 
-            (email, senha, criado_em, trial_expira_em, ativo, device_id, ip)
-            VALUES (%s, %s, %s, %s, 0, %s, %s)
-        """, (email, hash_senha(senha), agora, trial, device_id, ip))
-
-        conn.commit()
-
-        log(email, "registro")
-
-        return {"status": "ok"}
+            if status in ["RECEIVED", "CONFIRMED"] and email:
+                ativar_usuario(email)
 
     except Exception as e:
-        print("ERRO REGISTER:", e)
-        return {"erro": "erro ao registrar"}
+        print("ERRO WEBHOOK:", e)
 
-    finally:
-        conn.close()
+    return {"ok": True}
 
 
 # =========================
-# 🔑 LOGIN
+# 📦 LISTAR
 # =========================
-def login_user(email, senha, device_id):
+@app.get("/produtos")
+def listar(token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "token inválido"}
+
     conn = conectar()
     cursor = conn.cursor()
 
     try:
         cursor.execute("""
-            SELECT senha, trial_expira_em, ativo, device_id
-            FROM users WHERE email=%s
+            SELECT id, codigo, nome, validade, quantidade, tipo_qtd
+            FROM produtos WHERE user_email=%s
         """, (email,))
+        return cursor.fetchall()
+    finally:
+        conn.close()
 
-        user = cursor.fetchone()
 
-        if not user:
-            return {"erro": "Usuário não existe"}
+# =========================
+# ➕ ADICIONAR (COM BLOQUEIO)
+# =========================
+@app.post("/produtos")
+def adicionar(data: Produto, token: str = Header(None)):
+    email = get_email(token)
 
-        senha_db, trial_expira, ativo, device_db = user
+    if not email:
+        return {"erro": "não autorizado"}
 
-        if hash_senha(senha) != senha_db:
-            return {"erro": "Senha inválida"}
+    try:
+        datetime.strptime(data.validade, "%Y-%m-%d")
+    except:
+        return {"erro": "data inválida"}
 
-        if ativo == 0 and device_db and device_db != device_id:
-            return {"erro": "Conta vinculada a outro dispositivo"}
+    conn = conectar()
+    cursor = conn.cursor()
 
-        if not device_db:
-            cursor.execute(
-                "UPDATE users SET device_id=%s WHERE email=%s",
-                (device_id, email)
-            )
+    try:
+        # total atual
+        cursor.execute("""
+            SELECT COUNT(*) FROM produtos WHERE user_email=%s
+        """, (email,))
+        total = cursor.fetchone()[0]
 
-        dias = calcular_dias_restantes(trial_expira)
+        # status usuário
+        cursor.execute("""
+            SELECT ativo FROM users WHERE email=%s
+        """, (email,))
+        ativo = cursor.fetchone()[0]
 
-        if dias <= 0 and ativo == 0:
+        # limite
+        limite = 999999 if ativo else 50
+
+        # bloqueio
+        if total >= limite:
             return {
-                "status": "bloqueado",
-                "trial_restante": 0
+                "erro": "limite atingido",
+                "limite": limite,
+                "total": total
             }
 
-        token = gerar_token()
-
-        cursor.execute(
-            "UPDATE users SET token=%s WHERE email=%s",
-            (token, email)
-        )
+        # inserir
+        cursor.execute("""
+            INSERT INTO produtos 
+            (codigo, nome, validade, quantidade, tipo_qtd, user_email)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            data.codigo,
+            data.nome,
+            data.validade,
+            data.quantidade,
+            data.tipo_qtd,
+            email
+        ))
 
         conn.commit()
-
-        log(email, "login")
-
-        return {
-            "status": "ok",
-            "token": token,
-            "trial_restante": dias,
-            "ativo": ativo
-        }
+        return {"ok": True}
 
     except Exception as e:
-        print("ERRO LOGIN:", e)
-        return {"erro": "falha no login"}
+        print("ERRO INSERT:", e)
+        return {"erro": "erro ao salvar produto"}
 
     finally:
         conn.close()
 
 
 # =========================
-# 💳 ATIVAR USUÁRIO
+# ❌ EXCLUIR
 # =========================
-def ativar_usuario(email):
+@app.delete("/produtos/{id}")
+def excluir(id: int, token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
+    conn = conectar()
+    cursor = conn.cursor()
+
     try:
-        conn = conectar()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT ativo FROM users WHERE email=%s", (email,))
-        user = cursor.fetchone()
-
-        if not user:
-            return False
-
-        if user[0] == 1:
-            return True
-
-        nova_data = datetime.now() + timedelta(days=30)
-
         cursor.execute("""
-            UPDATE users
-            SET ativo = 1,
-                plano = 'pago',
-                trial_expira_em = %s
-            WHERE email = %s
-        """, (nova_data, email))
+            DELETE FROM produtos WHERE id=%s AND user_email=%s
+        """, (id, email))
+
+        if cursor.rowcount == 0:
+            return {"erro": "produto não encontrado"}
 
         conn.commit()
-
-        log(email, "pagamento_aprovado")
-
-        return True
-
-    except Exception as e:
-        print("ERRO ATIVAR:", e)
-        return False
+        return {"ok": True}
 
     finally:
         conn.close()
 
 
 # =========================
-# 📊 STATS (ADICIONADO)
+# ✏️ ATUALIZAR
 # =========================
-def get_user_stats(token):
+@app.put("/produtos/{id}")
+def atualizar_produto(id: int, data: Produto, token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
     try:
-        conn = conectar()
-        cursor = conn.cursor()
+        datetime.strptime(data.validade, "%Y-%m-%d")
+    except:
+        return {"erro": "data inválida"}
 
+    conn = conectar()
+    cursor = conn.cursor()
+
+    try:
         cursor.execute("""
-            SELECT email, trial_expira_em, ativo
-            FROM users WHERE token=%s
-        """, (token,))
+            UPDATE produtos
+            SET codigo=%s,
+                nome=%s,
+                validade=%s,
+                quantidade=%s,
+                tipo_qtd=%s
+            WHERE id=%s AND user_email=%s
+        """, (
+            data.codigo,
+            data.nome,
+            data.validade,
+            data.quantidade,
+            data.tipo_qtd,
+            id,
+            email
+        ))
 
-        user = cursor.fetchone()
+        if cursor.rowcount == 0:
+            return {"erro": "produto não encontrado"}
 
-        if not user:
-            return {"erro": "Usuário inválido"}
+        conn.commit()
+        return {"ok": True}
 
-        email, trial_expira, ativo = user
+    except Exception as e:
+        print("ERRO UPDATE:", e)
+        return {"erro": "erro ao atualizar produto"}
 
-        dias = calcular_dias_restantes(trial_expira)
+    finally:
+        conn.close()
 
-        # 🔥 LIMITE CORRETO
-        limite = 50 if ativo == 0 else 100
 
-        # 🔥 TOTAL REAL DO BANCO (ANTI BUG)
+# =========================
+# 📊 STATS (COM USO + BLOQUEIO)
+# =========================
+@app.get("/stats")
+def stats(token: str = Header(None)):
+    email = get_email(token)
+
+    if not email:
+        return {"erro": "não autorizado"}
+
+    conn = conectar()
+    cursor = conn.cursor()
+
+    try:
         cursor.execute("""
-            SELECT COUNT(*)
-            FROM produtos
-            WHERE user_email=%s
+            SELECT COUNT(*) FROM produtos WHERE user_email=%s
         """, (email,))
-
         total = cursor.fetchone()[0] or 0
 
-        # 🔥 PROTEÇÃO EXTRA (EVITA 100% BUGADO)
-        if total < 0:
-            total = 0
+        cursor.execute("""
+            SELECT trial_expira_em, ativo FROM users WHERE email=%s
+        """, (email,))
+        user = cursor.fetchone()
 
-        if limite <= 0:
-            limite = 50
+        trial_restante = 0
+        ativo = 0
+
+        if user:
+            trial_expira_em, ativo = user
+            trial_restante = calcular_dias_restantes(trial_expira_em)
+
+        limite = 999999 if ativo else 50
+
+        uso = int((total / limite) * 100) if limite > 0 else 0
+        bloqueado = total >= limite
 
         return {
-            "trial_restante": dias,
             "total": total,
-            "limite": limite
-        }
-
-    except Exception as e:
-        print("ERRO STATS:", e)
-        return {
-            "trial_restante": 0,
-            "total": 0,
-            "limite": 50
+            "trial_restante": trial_restante,
+            "limite": limite,
+            "uso": uso,
+            "bloqueado": bloqueado,
+            "plano": "PRO" if ativo else "TRIAL"
         }
 
     finally:
@@ -275,16 +339,19 @@ def get_user_stats(token):
 
 
 # =========================
-# 🌐 ENDPOINT
+# 🏠 HOME
 # =========================
-@app.route("/stats", methods=["GET"])
-def stats():
-    token = request.headers.get("token")
-    return jsonify(get_user_stats(token))
+@app.get("/")
+def home():
+    return {"status": "API ONLINE"}
 
 
 # =========================
-# ▶️ RUN
+# 🔄 UPDATE (AUTO UPDATE APP)
 # =========================
-if __name__ == "__main__":
-    app.run(debug=True)
+@app.get("/version")
+def version():
+    return {
+        "version": "1.0.1",
+        "url": "link"
+    }
