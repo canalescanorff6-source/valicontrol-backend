@@ -3,6 +3,10 @@ import uuid
 from datetime import datetime, timedelta
 from database import conectar
 
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
 
 # =========================
 # 🔐 UTIL
@@ -59,12 +63,10 @@ def register_user(email, senha, device_id):
         conn = conectar()
         cursor = conn.cursor()
 
-        # email único
         cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
         if cursor.fetchone():
             return {"erro": "Email já existe"}
 
-        # dispositivo único
         cursor.execute("SELECT id FROM users WHERE device_id=%s", (device_id,))
         if cursor.fetchone():
             return {"erro": "Já existe uma conta neste dispositivo"}
@@ -111,15 +113,12 @@ def login_user(email, senha, device_id):
 
         senha_db, trial_expira, ativo, device_db = user
 
-        # senha
         if hash_senha(senha) != senha_db:
             return {"erro": "Senha inválida"}
 
-        # dispositivo travado
         if device_db and device_db != device_id:
             return {"erro": "Conta vinculada a outro dispositivo"}
 
-        # salva device se não existir
         if not device_db:
             cursor.execute(
                 "UPDATE users SET device_id=%s WHERE email=%s",
@@ -134,7 +133,6 @@ def login_user(email, senha, device_id):
                 "trial_restante": 0
             }
 
-        # gera token
         token = gerar_token()
 
         cursor.execute(
@@ -162,24 +160,20 @@ def login_user(email, senha, device_id):
 
 
 # =========================
-# 💳 ATIVAR USUÁRIO (ANTI DUPLICADO)
+# 💳 ATIVAR USUÁRIO
 # =========================
 def ativar_usuario(email):
     try:
         conn = conectar()
         cursor = conn.cursor()
 
-        # 🔥 evita ativar duas vezes
         cursor.execute("SELECT ativo FROM users WHERE email=%s", (email,))
         user = cursor.fetchone()
 
         if not user:
             return False
 
-        ativo = user[0]
-
-        if ativo == 1:
-            print("⚠️ Usuário já ativo")
+        if user[0] == 1:
             return True
 
         nova_data = datetime.now() + timedelta(days=30)
@@ -204,3 +198,70 @@ def ativar_usuario(email):
 
     finally:
         conn.close()
+
+
+# =========================
+# 📊 STATS (ADICIONADO)
+# =========================
+def get_user_stats(token):
+    try:
+        conn = conectar()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT email, trial_expira_em, ativo
+            FROM users WHERE token=%s
+        """, (token,))
+
+        user = cursor.fetchone()
+
+        if not user:
+            return {"erro": "Usuário inválido"}
+
+        email, trial_expira, ativo = user
+
+        dias = calcular_dias_restantes(trial_expira)
+
+        limite = 50 if ativo == 0 else 999999
+
+        # 🔥 ESSA LINHA RESOLVE O 100%
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM produtos
+            WHERE user_email=%s
+        """, (email,))
+
+        total = cursor.fetchone()[0]
+
+        return {
+            "trial_restante": dias,
+            "total": total,
+            "limite": limite
+        }
+
+    except Exception as e:
+        print("ERRO STATS:", e)
+        return {
+            "trial_restante": 0,
+            "total": 0,
+            "limite": 50
+        }
+
+    finally:
+        conn.close()
+
+
+# =========================
+# 🌐 ENDPOINT
+# =========================
+@app.route("/stats", methods=["GET"])
+def stats():
+    token = request.headers.get("token")
+    return jsonify(get_user_stats(token))
+
+
+# =========================
+# ▶️ RUN
+# =========================
+if __name__ == "__main__":
+    app.run(debug=True)
