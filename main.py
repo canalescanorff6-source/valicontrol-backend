@@ -352,6 +352,6 @@ def home():
 @app.get("/version")
 def version():
     return {
-        "version": "1.0.1",  # 🔥 versão nova (IMPORTANTE)
-        "url": "https://drive.google.com/uc?export=download&id=SEU_ID"
+        "version": "1.0.2",  # 🔥 versão nova (IMPORTANTE)
+        "url": "https://drive.google.com/uc?export=download&id=1nIj3c4oJWTJTfVnA1y3de1MkIW7_Owul"
     }
